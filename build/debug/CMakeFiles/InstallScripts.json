@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"C:/Users/margo/Projects/taihu/build/debug/cmake_install.cmake",
-		"C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
