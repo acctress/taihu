@@ -42,6 +42,8 @@ file(GLOB_RECURSE PROJ_SOURCES CONFIGURE_DEPENDS
 
 add_executable(taihu ${PROJ_SOURCES} ${PROJ_HEADERS})
 
+target_compile_definitions(taihu PRIVATE TAIHU_VERSION="${PROJECT_VERSION}")
+
 target_include_directories(taihu PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
