@@ -1,0 +1,4 @@
+# ninja log v7
+3	18	8170918090634531	C:/Users/margo/Projects/taihu/build/release/CMakeFiles/cmake.verify_globs	dfac466919db0a79
+18	1459	8170918090795098	CMakeFiles/taihu.dir/source/entry.cpp.obj	a19cf957a420691f
+1461	1620	8170918105222620	C:/Users/margo/Projects/taihu/bin/exe/taihu.exe	52938dcceffb8285

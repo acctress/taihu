@@ -1,0 +1,8 @@
+[
+{
+  "directory": "C:/Users/margo/Projects/taihu/build/debug",
+  "command": "\"C:\\Program Files\\LLVM\\bin\\clang++.exe\" -IC:/Users/margo/Projects/taihu/include -IC:/Users/margo/Projects/taihu/build/debug/_deps/xiao-src/include -O0 -g -Xclang -gcodeview -std=gnu++23 -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd -o CMakeFiles\\taihu.dir\\source\\entry.cpp.obj -c C:\\Users\\margo\\Projects\\taihu\\source\\entry.cpp",
+  "file": "C:/Users/margo/Projects/taihu/source/entry.cpp",
+  "output": "C:/Users/margo/Projects/taihu/build/debug/CMakeFiles/taihu.dir/source/entry.cpp.obj"
+}
+]

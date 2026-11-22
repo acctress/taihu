@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/CMakeFiles/xiao-populate"
+		},
+		{
+			"file" : "C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/CMakeFiles/xiao-populate.rule"
+		},
+		{
+			"file" : "C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/CMakeFiles/xiao-populate-complete.rule"
+		},
+		{
+			"file" : "C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-build.rule"
+		},
+		{
+			"file" : "C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-configure.rule"
+		},
+		{
+			"file" : "C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-download.rule"
+		},
+		{
+			"file" : "C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-install.rule"
+		},
+		{
+			"file" : "C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-mkdir.rule"
+		},
+		{
+			"file" : "C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-patch.rule"
+		},
+		{
+			"file" : "C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-test.rule"
+		},
+		{
+			"file" : "C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"xiao-populate"
+		],
+		"name" : "xiao-populate"
+	}
+}

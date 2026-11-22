@@ -1,0 +1,14 @@
+# Target labels
+ xiao-populate
+# Source files and their labels
+C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/CMakeFiles/xiao-populate
+C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/CMakeFiles/xiao-populate.rule
+C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/CMakeFiles/xiao-populate-complete.rule
+C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-build.rule
+C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-configure.rule
+C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-download.rule
+C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-install.rule
+C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-mkdir.rule
+C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-patch.rule
+C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-test.rule
+C:/Users/margo/Projects/taihu/build/release/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-update.rule

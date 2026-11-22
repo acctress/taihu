@@ -1,0 +1,21 @@
+# ninja log v7
+1	36	8170918021713118	xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-mkdir	8688832f9b36d607
+1	36	8170918021713118	C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-mkdir	8688832f9b36d607
+36	1251	8170918033858791	xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-download	5395c9347675a038
+36	1251	8170918033858791	C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-download	5395c9347675a038
+1251	1317	8170918033898770	xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-update	319f52f894af9fde
+1251	1317	8170918033898770	C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-update	319f52f894af9fde
+1317	1349	8170918034848756	xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-patch	cd4791f800b3f350
+1317	1349	8170918034848756	C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-patch	cd4791f800b3f350
+1349	1382	8170918035172849	xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-configure	8fe91486f7c00a9e
+1349	1382	8170918035172849	C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-configure	8fe91486f7c00a9e
+1382	1414	8170918035493853	xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-build	f8e8a569853c4b0a
+1382	1414	8170918035493853	C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-build	f8e8a569853c4b0a
+1414	1446	8170918035816276	xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-install	e571628088bf4a5d
+1414	1446	8170918035816276	C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-install	e571628088bf4a5d
+1446	1478	8170918036133681	xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-test	c279fe16fc3b6708
+1446	1478	8170918036133681	C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-test	c279fe16fc3b6708
+1478	1527	8170918036614539	CMakeFiles/xiao-populate-complete	dcb636636c71c65e
+1478	1527	8170918036614539	xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-done	dcb636636c71c65e
+1478	1527	8170918036614539	C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/CMakeFiles/xiao-populate-complete	dcb636636c71c65e
+1478	1527	8170918036614539	C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/xiao-populate-prefix/src/xiao-populate-stamp/xiao-populate-done	dcb636636c71c65e
