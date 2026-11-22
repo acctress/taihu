@@ -1,3 +1,0 @@
-C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/CMakeFiles/xiao-populate.dir
-C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/CMakeFiles/edit_cache.dir
-C:/Users/margo/Projects/taihu/build/debug/_deps/xiao-subbuild/CMakeFiles/rebuild_cache.dir
