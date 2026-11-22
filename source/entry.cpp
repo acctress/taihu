@@ -1,5 +1,4 @@
 #include <xiao/version.hh>
-
 #include <cstdint>
 #include <print>
 

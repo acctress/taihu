@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(taihu VERSION 0.0.1 LANGUAGES CXX)
+project(taihu VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,8 +11,8 @@ endif()
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-set(TAIHU_XIAO_TAG "v0.1.0" CACHE STRING "xiao tag, branch or commit to fetch from GitHub")
-set(TAIHU_XIAO_DIR "" CACHE PATH "Use this local xiao checkout instead of fetching it")
+set(TAIHU_XIAO_TAG "v0.1.0" CACHE STRING "xiao tag")
+set(TAIHU_XIAO_DIR "" CACHE PATH "use this xiao checkout instead of fetching")
 
 if (TAIHU_XIAO_DIR)
     add_subdirectory("${TAIHU_XIAO_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/xiao")
