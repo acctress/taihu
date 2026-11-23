@@ -3,11 +3,10 @@
 import std;
 import taihu.support;
 
-std::int32_t main() {
-    std::println("taihu {} (xiao {})", TAIHU_VERSION, xiao::version);
+std::int32_t main()
+{
+    std::println( "taihu {} (xiao {})", TAIHU_VERSION, xiao::version );
 
-    constexpr taihu::support::SourceLocation none{};
-    constexpr taihu::support::SourceLocation loc{42};
-
-    static_assert(!none.valid() && loc.valid() && none < loc);
+    taihu::support::SourceManager source_man;
+    auto f = source_man.add_file( "a.c", "\xEF\xBB\xBFint y;\r\nreturn 0;\r" );
 }
