@@ -94,7 +94,7 @@ export namespace taihu::support
         const FileId id { static_cast< std::uint32_t >( m_entries.size() ) };
 
         m_entries.push_back( Entry { Kind::file, path, std::move( out ), m_next, {} } );
-        m_next += std::uint32_t { static_cast< unsigned int >( sz ) } + 1;
+        m_next += static_cast< std::uint32_t >( sz ) + 1;
         return id;
     }
 
