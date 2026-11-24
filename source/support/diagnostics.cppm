@@ -30,6 +30,16 @@ export namespace taihu::support
         missing_value,
         invalid_value,
         missing_input,
+        cannot_open_file,
+        missing_macro_name,
+        macro_name_not_identifier,
+        macro_redefined,
+        missing_space_after_macro_name,
+        unknown_directive,
+        extra_tokens_after_directive,
+        vertical_space_in_directive,
+        va_args_outside_variadic,
+        hash_hash_at_edge,
         count
     };
 
@@ -44,7 +54,17 @@ export namespace taihu::support
                                             "unknown_option",
                                             "missing_value",
                                             "invalid_value",
-                                            "missing_input" };
+                                            "missing_input",
+                                            "cannot_open_file",
+                                            "missing_macro_name",
+                                            "macro_name_not_identifier",
+                                            "macro_redefined",
+                                            "missing_space_after_macro_name",
+                                            "unknown_directive",
+                                            "extra_tokens_after_directive",
+                                            "vertical_space_in_directive",
+                                            "va_args_outside_variadic",
+                                            "hash_hash_at_edge" };
     };
 
     static_assert( EnumNames< DiagnosticId >::names.size() == static_cast< std::size_t >( DiagnosticId::count ) );
@@ -116,6 +136,21 @@ export namespace taihu::support
          { DiagnosticId::missing_value, Severity::error, "E0101", "", "`{}` needs a value: <{}>", "" },
          { DiagnosticId::invalid_value, Severity::error, "E0102", "", "`{}` is not a valid <{}> for `{}`", "" },
          { DiagnosticId::missing_input, Severity::error, "E0103", "", "no input files", "" },
+         { DiagnosticId::cannot_open_file, Severity::error, "E0104", "", "cannot open `{}`", "" },
+         { DiagnosticId::missing_macro_name, Severity::error, "E0200", "", "`#{}` needs a macro name", "C23 §6.10.5" },
+         { DiagnosticId::macro_name_not_identifier, Severity::error, "E0201", "", "a macro name must be an identifier", "C23 §6.10.5" },
+         { DiagnosticId::macro_redefined, Severity::error, "E0202", "", "`{}` is redefined with a different replacement list",
+              "C23 §6.10.5p2" },
+         { DiagnosticId::missing_space_after_macro_name, Severity::error, "E0203", "",
+              "an object-like macro needs white space after its name", "C23 §6.10.5p3" },
+         { DiagnosticId::unknown_directive, Severity::error, "E0204", "", "unknown directive `#{}`", "C23 §6.10.1p13" },
+         { DiagnosticId::extra_tokens_after_directive, Severity::error, "E0205", "", "extra tokens after `#{}`", "C23 §6.10.1" },
+         { DiagnosticId::vertical_space_in_directive, Severity::error, "E0206", "",
+              "only spaces and tabs may separate the tokens of a directive", "C23 §6.10.1p8" },
+         { DiagnosticId::va_args_outside_variadic, Severity::error, "E0207", "",
+              "`{}` can only appear in a function-like macro that takes `...`", "C23 §6.10.5p5" },
+         { DiagnosticId::hash_hash_at_edge, Severity::error, "E0208", "", "`##` cannot be at the {} of a replacement list",
+              "C23 §6.10.5.3p1" },
          }
     };
 

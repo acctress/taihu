@@ -101,7 +101,8 @@ export namespace taihu::support
             for ( const auto& mark : marks ) max_line = std::max( max_line, mark.end_line );
             for ( const auto& suggestion : diagnostic.suggestions )
                 for ( const auto& edit : suggestion.edits )
-                    if ( edit.range.begin.valid() ) max_line = std::max( max_line, m_sources.line_column( edit.range.begin ).line );
+                    if ( edit.range.begin.valid() )
+                        max_line = std::max( max_line, m_sources.line_column( m_sources.file_location( edit.range.begin ) ).line );
             const auto width = digits( max_line );
             const auto pad   = std::string( width, ' ' );
 
@@ -217,17 +218,18 @@ export namespace taihu::support
             {
                 if ( !label.range.begin.valid() ) continue;
 
-                const auto file             = m_sources.decompose( label.range.begin ).file;
-                const auto [ line, column ] = m_sources.line_column( label.range.begin );
+                const auto range            = m_sources.file_range( label.range );
+                const auto file             = m_sources.decompose( range.begin ).file;
+                const auto [ line, column ] = m_sources.line_column( range.begin );
                 const auto text             = m_sources.line_text( file, line );
 
                 Mark mark { file, line, column, display_column( text, column - 1 ), line, 0, label.text, label.primary };
                 mark.end = mark.start + 1;
 
-                if ( label.range.end.valid() && label.range.end > label.range.begin )
+                if ( range.end.valid() && range.end > range.begin )
                 {
-                    const auto end_file = m_sources.decompose( label.range.end ).file;
-                    auto       end_pos  = m_sources.line_column( label.range.end );
+                    const auto end_file = m_sources.decompose( range.end ).file;
+                    auto       end_pos  = m_sources.line_column( range.end );
 
                     if ( end_file != file ) mark.end = display_width( text );
                     else if ( end_pos.line == line )
@@ -419,9 +421,10 @@ export namespace taihu::support
             for ( const auto& edit : suggestion.edits )
             {
                 if ( !edit.range.begin.valid() ) continue;
-                const auto end_loc = edit.range.end.valid() ? edit.range.end : edit.range.begin;
-                const auto file    = m_sources.decompose( edit.range.begin ).file;
-                const auto begin   = m_sources.line_column( edit.range.begin );
+                const auto range   = m_sources.file_range( edit.range );
+                const auto end_loc = range.end.valid() ? range.end : range.begin;
+                const auto file    = m_sources.decompose( range.begin ).file;
+                const auto begin   = m_sources.line_column( range.begin );
                 const auto end     = m_sources.line_column( end_loc );
                 if ( end.line != begin.line || m_sources.decompose( end_loc ).file != file ) continue;
                 by_line[ { file.index, begin.line } ].push_back(

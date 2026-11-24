@@ -3,51 +3,122 @@
 import std;
 import taihu.support;
 import taihu.lex;
+import taihu.pp;
 
 using namespace taihu::support;
-using enum taihu::lex::TokenKind;
-using enum taihu::lex::Encoding;
 
-std::int32_t main()
+namespace
 {
-    use_utf8_console();
-    std::println( "taihu {} (xiao {})", TAIHU_VERSION, xiao::version );
-
-    struct Expected
+    struct Options
     {
-        std::string_view      spelling;
-        taihu::lex::TokenKind kind;
-        taihu::lex::Encoding  encoding;
+        bool                       dump_tokens {};
+        bool                       preprocess_only {};
+        std::vector< std::string > defines;
+        std::vector< std::string > inputs;
     };
 
-    constexpr Expected expected[] {
-        { "1'000'000", pp_number, none },    { "0x'FF", pp_number, none },       { "1", pp_number, none },
-        { "''", char_constant, none },       { "3.14'15e+'2", pp_number, none }, { "u8'a'", char_constant, utf8 },
-        { "u8\"s\"", string_literal, utf8 }, { "u8", identifier, none },         { "'b'", char_constant, none },
-    };
-
-    SourceManager     sources;
-    Interner          interner;
-    DiagnosticEngine  diags { sources };
-    const auto        file = sources.add_file( "c23.c", "1'000'000 0x'FF 1'' 3.14'15e+'2 u8'a' u8\"s\" u8 'b'" );
-    taihu::lex::Lexer lexer { sources, file, diags, interner };
-
-    bool pass = true;
-    for ( const auto& want : expected )
+    std::string predefines( const std::vector< std::string >& defines )
     {
-        const auto token    = lexer.next();
-        const auto offset   = sources.decompose( token.location ).offset;
-        const auto spelling = sources.text( file ).substr( offset, token.length );
-        const bool ok       = spelling == want.spelling && token.kind == want.kind && token.encoding == want.encoding;
-        pass                = pass && ok;
-        std::println( "{} {:<12} {:<14} {}", ok ? "pass" : "FAIL", spelling, token.kind, token.encoding );
+        std::string text;
+        for ( const std::string_view define : defines )
+        {
+            if ( const auto equals = define.find( '=' ); equals == std::string_view::npos )
+                std::format_to( std::back_inserter( text ), "#define {} 1\n", define );
+            else
+                std::format_to( std::back_inserter( text ), "#define {} {}\n", define.substr( 0, equals ), define.substr( equals + 1 ) );
+        }
+        return text;
     }
 
-    pass = pass && lexer.next().is( eof ) && diags.error_count() == 1;
-    std::println( "{}", pass ? "all passed" : "FAILED" );
+    std::string spelling_of( const taihu::pp::Preprocessor& preprocessor, const taihu::lex::Token& token )
+    {
+        const auto text = preprocessor.spelling( token );
+        return token.has( taihu::lex::TokenFlags::needs_cleaning ) ? taihu::lex::clean_spelling( text ) : std::string { text };
+    }
 
-    const DiagnosticRenderer renderer { sources, theme_classic, color_enabled( stdout ) };
-    std::print( "\n{}", renderer.render_all( diags ) );
+    void dump_token( const SourceManager& sources, const taihu::pp::Preprocessor& preprocessor, const taihu::lex::Token& token )
+    {
+        using taihu::lex::TokenFlags;
 
-    return pass ? 0 : 1;
+        const auto [ line, column ] = sources.line_column( sources.file_location( token.location ) );
+
+        std::string line_out = std::format( "{} '{}' {}:{}", token.kind, preprocessor.spelling( token ), line, column );
+        if ( token.has( TokenFlags::at_line_start ) ) line_out += " [bol]";
+        if ( token.has( TokenFlags::leading_space ) ) line_out += " [space]";
+        if ( token.has( TokenFlags::needs_cleaning ) ) line_out += " [clean]";
+        if ( token.has( TokenFlags::no_expand ) ) line_out += " [painted]";
+        if ( sources.is_expansion( token.location ) ) line_out += " [macro]";
+        if ( token.encoding != taihu::lex::Encoding::none ) std::format_to( std::back_inserter( line_out ), " [{}]", token.encoding );
+        std::println( "{}", line_out );
+    }
+
+    void preprocess( SourceManager& sources, DiagnosticEngine& diags, Interner& interner, const FileId file,
+                     const std::optional< FileId > defines, const Options& options )
+    {
+        using taihu::lex::TokenFlags;
+
+        taihu::pp::Preprocessor preprocessor { sources, diags, interner, file };
+        if ( defines ) preprocessor.push_file( *defines );
+
+        std::string out;
+        for ( auto token = preprocessor.next(); !token.is( taihu::lex::TokenKind::eof ); token = preprocessor.next() )
+        {
+            if ( options.dump_tokens ) dump_token( sources, preprocessor, token );
+            if ( !options.preprocess_only ) continue;
+
+            if ( token.has( TokenFlags::at_line_start ) )
+            {
+                if ( !out.empty() ) out += '\n';
+            }
+            else if ( token.has( TokenFlags::leading_space ) )
+                out += ' ';
+            out += spelling_of( preprocessor, token );
+        }
+
+        if ( options.preprocess_only && !out.empty() ) std::println( "{}", out );
+    }
+} // namespace
+
+std::int32_t main( const int argc, const char* const * argv )
+{
+    use_utf8_console();
+
+    Options options;
+    Parser  parser { "taihu", "a C23 compiler built on xiao" };
+    parser.version( TAIHU_VERSION )
+        .flag( "--dt", options.dump_tokens, "print each file's tokens after preprocessing and stop" )
+        .flag( "-E", options.preprocess_only, "print each file after preprocessing and stop" )
+        .values( "-D", options.defines, "name[=value]", "define a macro" )
+        .positionals( options.inputs, "files", "C source files" );
+
+    SourceManager            sources;
+    DiagnosticEngine         diags { sources };
+    Interner                 interner;
+    const DiagnosticRenderer renderer { sources, theme_classic, color_enabled( stderr ) };
+
+    switch ( parser.parse( { argv, static_cast< std::size_t >( argc ) }, sources, diags ) )
+    {
+        case ParseResult::help: std::print( "{}", parser.help() ); return 0;
+        case ParseResult::version: std::println( "taihu {} (xiao {})", parser.version_text(), xiao::version ); return 0;
+        case ParseResult::error: std::print( stderr, "{}", renderer.render_all( diags ) ); return 2;
+        case ParseResult::run: break;
+    }
+
+    std::optional< FileId > defines;
+    if ( !options.defines.empty() ) defines = sources.add_file( "<cli>", predefines( options.defines ) );
+
+    for ( const auto& input : options.inputs )
+    {
+        const auto file = sources.load_file( input );
+        if ( !file )
+        {
+            diags.report( DiagnosticId::cannot_open_file, input ).help( "check that the path is right and the file is readable" );
+            continue;
+        }
+
+        preprocess( sources, diags, interner, *file, defines, options );
+    }
+
+    if ( !diags.all().empty() ) std::print( stderr, "{}", renderer.render_all( diags ) );
+    return diags.error_count() > 0 ? 1 : 0;
 }

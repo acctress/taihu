@@ -54,7 +54,7 @@ set_target_properties(taihu PROPERTIES
 )
 
 option(TAIHU_TESTS "build tests" ${PROJECT_IS_TOP_LEVEL})
-if (TAIGU_TESTS)
+if (TAIHU_TESTS)
     include(FetchContent)
     FetchContent_Declare(catch2
             URL https://github.com/catchorg/Catch2/archive/refs/tags/v3.7.1.tar.gz
@@ -68,4 +68,9 @@ if (TAIGU_TESTS)
     enable_testing()
     include("${catch2_SOURCE_DIR}/extras/Catch.cmake")
     catch_discover_tests(taihu_tests)
+
+    add_test(NAME driver.preprocess
+            COMMAND taihu -E -DLEVEL=3 -DNAME=name "${CMAKE_CURRENT_SOURCE_DIR}/tests/c/macros.c")
+    set_tests_properties(driver.preprocess PROPERTIES PASS_REGULAR_EXPRESSION
+            "int area = 640 \\* 480;\nint level = 3;\nint self = 0;\nint width = WIDTH;\nconst char\\* name = name;")
 endif ()

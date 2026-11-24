@@ -79,6 +79,8 @@ export namespace taihu::lex
         at_line_start  = 1 << 0,
         leading_space  = 1 << 1,
         needs_cleaning = 1 << 2,
+        no_expand      = 1 << 3,
+        vertical_space = 1 << 4,
     };
 
     [[nodiscard]] constexpr TokenFlags operator| ( const TokenFlags a, const TokenFlags b ) noexcept
@@ -86,6 +88,9 @@ export namespace taihu::lex
 
     [[nodiscard]] constexpr TokenFlags operator& ( const TokenFlags a, const TokenFlags b ) noexcept
     { return static_cast< TokenFlags >( std::to_underlying( a ) & std::to_underlying( b ) ); }
+
+    [[nodiscard]] constexpr TokenFlags operator~( const TokenFlags a ) noexcept
+    { return static_cast< TokenFlags >( static_cast< std::uint8_t >( ~std::to_underlying( a ) ) ); }
 
     constexpr TokenFlags& operator|= ( TokenFlags& a, const TokenFlags b ) noexcept
     { return a = a | b; }

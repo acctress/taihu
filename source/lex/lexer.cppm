@@ -144,6 +144,38 @@ export namespace taihu::lex
         }
     };
 
+    [[nodiscard]] std::string clean_spelling( const std::string_view raw, const LexerOptions options = {} )
+    {
+        std::string out;
+
+        for ( std::size_t i {}; i < raw.size(); )
+        {
+            if ( raw[ i ] == '\\' && i + 1 < raw.size() && raw[ i + 1 ] == '\n' )
+            {
+                i += 2;
+                continue;
+            }
+
+            if ( options.trigraphs && raw.substr( i, 2 ) == "??" && i + 2 < raw.size() )
+                if ( const char t = trigraph( raw[ i + 2 ] ) )
+                {
+                    if ( t == '\\' && i + 3 < raw.size() && raw[ i + 3 ] == '\n' )
+                    {
+                        i += 4;
+                        continue;
+                    }
+
+                    out += t;
+                    i   += 3;
+                    continue;
+                }
+
+            out += raw[ i++ ];
+        }
+
+        return out;
+    }
+
     Lexer::Lexer( const support::SourceManager& sources, const support::FileId file, support::DiagnosticEngine& diagnostics,
                   support::Interner& interner, const LexerOptions options ) :
         m_sources { sources },
@@ -376,8 +408,7 @@ export namespace taihu::lex
         m_cleaning = false;
 
         const auto start = m_cur;
-        const char open  = current();
-        if ( open == '<' || open == '"' )
+        if ( const char open = current(); open == '<' || open == '"' )
         {
             const char close = open == '<' ? '>' : '"';
             advance();
@@ -559,10 +590,13 @@ export namespace taihu::lex
             {
                 case ' ':
                 case '\t':
+                    advance();
+                    m_pending |= TokenFlags::leading_space;
+                    continue;
                 case '\v':
                 case '\f':
                     advance();
-                    m_pending |= TokenFlags::leading_space;
+                    m_pending |= TokenFlags::leading_space | TokenFlags::vertical_space;
                     continue;
                 case '\n':
                     advance();

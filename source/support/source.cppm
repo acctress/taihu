@@ -104,10 +104,21 @@ export namespace taihu::support
 
         [[nodiscard]] CommandLine add_cmd_line( std::span< const char* const > argv );
 
+        [[nodiscard]] SourceLocation add_expansion( SourceLocation spelling, SourceRange expansion, std::uint32_t length );
+
+        [[nodiscard]] bool is_expansion( SourceLocation location ) const;
+
+        [[nodiscard]] SourceLocation spelling_location( SourceLocation location ) const;
+
+        [[nodiscard]] SourceLocation file_location( SourceLocation location ) const;
+
+        [[nodiscard]] SourceRange file_range( SourceRange range ) const;
+
     private:
         enum class Kind : std::uint8_t
         {
-            file
+            file,
+            expansion
         };
 
         struct Entry
@@ -118,12 +129,16 @@ export namespace taihu::support
             std::uint32_t                        start {};
             FileStyle                            style {};
             mutable std::vector< std::uint32_t > line_starts;
+            SourceLocation                       spelling {};
+            SourceRange                          expansion {};
         };
 
         std::deque< Entry > m_entries;
         std::uint32_t       m_next { 1 };
 
         const Entry& entry( FileId file ) const;
+
+        const Entry& entry_at( SourceLocation location ) const;
 
         static const std::vector< std::uint32_t >& lines( const Entry& entry );
     };
@@ -201,6 +216,7 @@ export namespace taihu::support
     std::string_view SourceManager::text( const FileId file ) const
     {
         const auto& e = entry( file );
+        if ( e.text.empty() ) return {};
         return { e.text.data(), e.text.size() - 1 };
     }
 
@@ -261,8 +277,9 @@ export namespace taihu::support
         {
             if ( i > 0 ) text += ' ';
 
-            const std::string_view arg { raw };
-            const auto             begin = static_cast< std::uint32_t >( text.size() );
+            const auto             program = i == 0 ? std::filesystem::path { raw }.stem().string() : std::string {};
+            const std::string_view arg     = i == 0 ? std::string_view { program } : std::string_view { raw };
+            const auto             begin   = static_cast< std::uint32_t >( text.size() );
 
             if ( arg.contains( ' ' ) )
             {
@@ -284,5 +301,60 @@ export namespace taihu::support
             result.ranges.push_back( { location( result.file, begin ), location( result.file, end ) } );
 
         return result;
+    }
+
+    const SourceManager::Entry& SourceManager::entry_at( const SourceLocation location ) const
+    { return entry( decompose( location ).file ); }
+
+    SourceLocation SourceManager::add_expansion( const SourceLocation spelling, const SourceRange expansion, const std::uint32_t length )
+    {
+        assert( spelling.valid() && expansion.begin.valid() );
+
+        const auto size = std::max< std::uint32_t >( length, 1 );
+        if ( size >= std::numeric_limits< std::uint32_t >::max() - m_next ) throw std::length_error( "too many macro expansions" );
+
+        const SourceLocation start { m_next };
+        m_entries.push_back( { .kind = Kind::expansion, .start = m_next, .spelling = spelling, .expansion = expansion } );
+        m_next += size;
+        return start;
+    }
+
+    bool SourceManager::is_expansion( const SourceLocation location ) const
+    { return entry_at( location ).kind == Kind::expansion; }
+
+    SourceLocation SourceManager::spelling_location( SourceLocation location ) const
+    {
+        for ( ;; )
+        {
+            const auto& e = entry_at( location );
+            if ( e.kind == Kind::file ) return location;
+            location = e.spelling + ( location.raw - e.start );
+        }
+    }
+
+    SourceLocation SourceManager::file_location( SourceLocation location ) const
+    {
+        for ( ;; )
+        {
+            const auto& e = entry_at( location );
+            if ( e.kind == Kind::file ) return location;
+            location = e.expansion.begin;
+        }
+    }
+
+    SourceRange SourceManager::file_range( const SourceRange range ) const
+    {
+        const auto begin = file_location( range.begin );
+        if ( !range.end.valid() ) return { begin, range.end };
+        if ( range.end <= range.begin ) return { begin, begin };
+
+        SourceLocation last { range.end.raw - 1 };
+        for ( ;; )
+        {
+            const auto& e = entry_at( last );
+            if ( e.kind == Kind::file ) break;
+            last = { e.expansion.end.raw - 1 };
+        }
+        return { begin, last + 1 };
     }
 } // namespace taihu::support

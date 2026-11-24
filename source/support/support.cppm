@@ -5,3 +5,4 @@ export import :style;
 export import :diagnostics;
 export import :render;
 export import :interner;
+export import :cli;
