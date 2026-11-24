@@ -13,6 +13,7 @@ namespace
     {
         bool                       dump_tokens {};
         bool                       preprocess_only {};
+        bool                       no_line_markers {};
         std::vector< std::string > defines;
         std::vector< std::string > inputs;
     };
@@ -28,12 +29,6 @@ namespace
                 std::format_to( std::back_inserter( text ), "#define {} {}\n", define.substr( 0, equals ), define.substr( equals + 1 ) );
         }
         return text;
-    }
-
-    std::string spelling_of( const taihu::pp::Preprocessor& preprocessor, const taihu::lex::Token& token )
-    {
-        const auto text = preprocessor.spelling( token );
-        return token.has( taihu::lex::TokenFlags::needs_cleaning ) ? taihu::lex::clean_spelling( text ) : std::string { text };
     }
 
     void dump_token( const SourceManager& sources, const taihu::pp::Preprocessor& preprocessor, const taihu::lex::Token& token )
@@ -55,27 +50,18 @@ namespace
     void preprocess( SourceManager& sources, DiagnosticEngine& diags, Interner& interner, const FileId file,
                      const std::optional< FileId > defines, const Options& options )
     {
-        using taihu::lex::TokenFlags;
-
         taihu::pp::Preprocessor preprocessor { sources, diags, interner, file };
         if ( defines ) preprocessor.push_file( *defines );
 
-        std::string out;
+        taihu::pp::Printer printer { sources, preprocessor,
+                                     { .line_markers = !options.no_line_markers, .color = color_enabled( stdout ) } };
         for ( auto token = preprocessor.next(); !token.is( taihu::lex::TokenKind::eof ); token = preprocessor.next() )
         {
             if ( options.dump_tokens ) dump_token( sources, preprocessor, token );
-            if ( !options.preprocess_only ) continue;
-
-            if ( token.has( TokenFlags::at_line_start ) )
-            {
-                if ( !out.empty() ) out += '\n';
-            }
-            else if ( token.has( TokenFlags::leading_space ) )
-                out += ' ';
-            out += spelling_of( preprocessor, token );
+            if ( options.preprocess_only ) printer.add( token );
         }
 
-        if ( options.preprocess_only && !out.empty() ) std::println( "{}", out );
+        if ( options.preprocess_only ) std::print( "{}", printer.finish() );
     }
 } // namespace
 
@@ -88,6 +74,7 @@ std::int32_t main( const int argc, const char* const * argv )
     parser.version( TAIHU_VERSION )
         .flag( "--dt", options.dump_tokens, "print each file's tokens after preprocessing and stop" )
         .flag( "-E", options.preprocess_only, "print each file after preprocessing and stop" )
+        .flag( "-P", options.no_line_markers, "leave line markers out of the -E output" )
         .values( "-D", options.defines, "name[=value]", "define a macro" )
         .positionals( options.inputs, "files", "C source files" );
 

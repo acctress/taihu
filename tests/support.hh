@@ -3,6 +3,7 @@
 import std;
 import taihu.support;
 import taihu.lex;
+import taihu.pp;
 
 namespace taihu::test
 {
@@ -52,6 +53,36 @@ namespace taihu::test
         [[nodiscard]] std::vector< lex::TokenKind > kinds() const
         {
             return tokens | std::views::transform( &lex::Token::kind ) | std::ranges::to< std::vector >();
+        }
+    };
+
+    struct Preprocessed : Buffer
+    {
+        pp::Preprocessor          preprocessor;
+        std::vector< lex::Token > tokens;
+
+        explicit Preprocessed( const std::string_view text ) : Buffer { text }, preprocessor { sources, diags, interner, file }
+        {
+            for ( auto token = preprocessor.next(); !token.is( lex::TokenKind::eof ); token = preprocessor.next() )
+                tokens.push_back( token );
+        }
+
+        [[nodiscard]] std::string text() const
+        {
+            std::string out;
+            for ( const auto& token : tokens )
+            {
+                if ( !out.empty() ) out += ' ';
+                out += preprocessor.spelling( token );
+            }
+            return out;
+        }
+
+        [[nodiscard]] std::string printed( const pp::PrintOptions options = {} ) const
+        {
+            pp::Printer printer { sources, preprocessor, options };
+            for ( const auto& token : tokens ) printer.add( token );
+            return printer.finish();
         }
     };
 

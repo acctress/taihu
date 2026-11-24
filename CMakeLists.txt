@@ -72,5 +72,5 @@ if (TAIHU_TESTS)
     add_test(NAME driver.preprocess
             COMMAND taihu -E -DLEVEL=3 -DNAME=name "${CMAKE_CURRENT_SOURCE_DIR}/tests/c/macros.c")
     set_tests_properties(driver.preprocess PROPERTIES PASS_REGULAR_EXPRESSION
-            "int area = 640 \\* 480;\nint level = 3;\nint self = 0;\nint width = WIDTH;\nconst char\\* name = name;")
+            "# 7 \"[^\"]*macros.c\"\r?\nint area = 640 \\* 480.\r?\nint level = 3.\r?\nint self = 0.\r?\n\r?\n\r?\nint width = WIDTH.\r?\nconst char\\* name = name.")
 endif ()

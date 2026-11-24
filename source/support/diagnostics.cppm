@@ -40,6 +40,11 @@ export namespace taihu::support
         vertical_space_in_directive,
         va_args_outside_variadic,
         hash_hash_at_edge,
+        expected_parameter,
+        duplicate_parameter,
+        unclosed_parameter_list,
+        unterminated_macro_call,
+        macro_argument_count,
         count
     };
 
@@ -64,7 +69,12 @@ export namespace taihu::support
                                             "extra_tokens_after_directive",
                                             "vertical_space_in_directive",
                                             "va_args_outside_variadic",
-                                            "hash_hash_at_edge" };
+                                            "hash_hash_at_edge",
+                                            "expected_parameter",
+                                            "duplicate_parameter",
+                                            "unclosed_parameter_list",
+                                            "unterminated_macro_call",
+                                            "macro_argument_count" };
     };
 
     static_assert( EnumNames< DiagnosticId >::names.size() == static_cast< std::size_t >( DiagnosticId::count ) );
@@ -151,6 +161,13 @@ export namespace taihu::support
               "`{}` can only appear in a function-like macro that takes `...`", "C23 §6.10.5p5" },
          { DiagnosticId::hash_hash_at_edge, Severity::error, "E0208", "", "`##` cannot be at the {} of a replacement list",
               "C23 §6.10.5.3p1" },
+         { DiagnosticId::expected_parameter, Severity::error, "E0209", "", "expected a parameter name", "C23 §6.10.5p10" },
+         { DiagnosticId::duplicate_parameter, Severity::error, "E0210", "", "`{}` is already a parameter of this macro",
+              "C23 §6.10.5p6" },
+         { DiagnosticId::unclosed_parameter_list, Severity::error, "E0211", "", "expected `,` or `)` in the parameter list",
+              "C23 §6.10.5p10" },
+         { DiagnosticId::unterminated_macro_call, Severity::error, "E0212", "", "the call to `{}` has no closing `)`", "C23 §6.10.5p4" },
+         { DiagnosticId::macro_argument_count, Severity::error, "E0213", "", "`{}` takes {} but was given {}", "C23 §6.10.5p4" },
          }
     };
 
