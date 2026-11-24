@@ -16,7 +16,7 @@ export namespace taihu::support
         auto operator<=> ( const SourceLocation& ) const = default;
     };
 
-    [[nodiscard]] constexpr SourceLocation operator+( const SourceLocation location, const std::uint32_t offset ) noexcept
+    [[nodiscard]] constexpr SourceLocation operator+ ( const SourceLocation location, const std::uint32_t offset ) noexcept
     { return { location.raw + offset }; }
 
     struct SourceRange
@@ -74,6 +74,13 @@ export namespace taihu::support
         std::uint32_t offset {};
     };
 
+    struct CommandLine
+    {
+        FileId                     file {};
+        std::vector< std::string > args;
+        std::vector< SourceRange > ranges;
+    };
+
     class SourceManager
     {
     public:
@@ -94,6 +101,8 @@ export namespace taihu::support
         [[nodiscard]] LineColumn line_column( SourceLocation location ) const;
 
         [[nodiscard]] std::string_view line_text( FileId file, std::uint32_t line ) const;
+
+        [[nodiscard]] CommandLine add_cmd_line( std::span< const char* const > argv );
 
     private:
         enum class Kind : std::uint8_t
@@ -153,7 +162,12 @@ export namespace taihu::support
         text.resize( write );
 
         style.ending = static_cast< LineEnding >( std::ranges::max_element( endings ) - endings.begin() );
-        style.mixed  = std::ranges::count_if( endings, []( const std::size_t n ) { return n != 0; } ) > 1;
+        style.mixed  = std::ranges::count_if( endings,
+                                              []( const std::size_t n )
+                                              {
+                                                 return n != 0;
+                                             } )
+                    > 1;
 
         const auto size = text.size();
         if ( size >= std::numeric_limits< std::uint32_t >::max() - m_next ) throw std::length_error( "source too large" );
@@ -161,7 +175,8 @@ export namespace taihu::support
         text.push_back( '\0' );
 
         const FileId id { static_cast< std::uint32_t >( m_entries.size() ) };
-        m_entries.push_back( { .kind = Kind::file, .path = std::move( path ), .text = std::move( text ), .start = m_next, .style = style } );
+        m_entries.push_back(
+            { .kind = Kind::file, .path = std::move( path ), .text = std::move( text ), .start = m_next, .style = style } );
         m_next += static_cast< std::uint32_t >( size ) + 1;
         return id;
     }
@@ -234,5 +249,40 @@ export namespace taihu::support
             if ( entry.text[ i ] == '\n' ) entry.line_starts.push_back( i + 1 );
 
         return entry.line_starts;
+    }
+
+    CommandLine SourceManager::add_cmd_line( const std::span< const char* const > argv )
+    {
+        CommandLine                                              result;
+        std::string                                              text;
+        std::vector< std::pair< std::uint32_t, std::uint32_t > > offsets;
+
+        for ( const auto [ i, raw ] : std::views::enumerate( argv ) )
+        {
+            if ( i > 0 ) text += ' ';
+
+            const std::string_view arg { raw };
+            const auto             begin = static_cast< std::uint32_t >( text.size() );
+
+            if ( arg.contains( ' ' ) )
+            {
+                text += '"';
+                text += arg;
+                text += '"';
+            }
+            else
+                text += arg;
+
+            offsets.emplace_back( begin, static_cast< std::uint32_t >( text.size() ) );
+            result.args.emplace_back( arg );
+        }
+
+        result.file = add_file( "<cli>", std::move( text ) );
+        result.ranges.reserve( offsets.size() );
+
+        for ( const auto [ begin, end ] : offsets )
+            result.ranges.push_back( { location( result.file, begin ), location( result.file, end ) } );
+
+        return result;
     }
 } // namespace taihu::support

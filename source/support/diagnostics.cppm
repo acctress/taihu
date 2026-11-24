@@ -26,14 +26,25 @@ export namespace taihu::support
         incomplete_universal_character,
         invalid_universal_character,
         empty_char_constant,
+        unknown_option,
+        missing_value,
+        invalid_value,
+        missing_input,
         count
     };
 
     template <>
     struct EnumNames< DiagnosticId >
     {
-        static constexpr std::array names { "unterminated_comment", "missing_terminating_quote", "incomplete_universal_character",
-                                            "invalid_universal_character", "empty_char_constant" };
+        static constexpr std::array names { "unterminated_comment",
+                                            "missing_terminating_quote",
+                                            "incomplete_universal_character",
+                                            "invalid_universal_character",
+                                            "empty_char_constant",
+                                            "unknown_option",
+                                            "missing_value",
+                                            "invalid_value",
+                                            "missing_input" };
     };
 
     static_assert( EnumNames< DiagnosticId >::names.size() == static_cast< std::size_t >( DiagnosticId::count ) );
@@ -101,6 +112,10 @@ export namespace taihu::support
               "C23 §6.4.3" },
          { DiagnosticId::invalid_universal_character, Severity::error, "E0004", "", "`{}` is not allowed in {}", "C23 §6.4.3" },
          { DiagnosticId::empty_char_constant, Severity::error, "E0005", "", "this character constant is empty", "C23 §6.4.4.5" },
+         { DiagnosticId::unknown_option, Severity::error, "E0100", "", "unknown option `{}`", "" },
+         { DiagnosticId::missing_value, Severity::error, "E0101", "", "`{}` needs a value: <{}>", "" },
+         { DiagnosticId::invalid_value, Severity::error, "E0102", "", "`{}` is not a valid <{}> for `{}`", "" },
+         { DiagnosticId::missing_input, Severity::error, "E0103", "", "no input files", "" },
          }
     };
 
@@ -144,7 +159,10 @@ export namespace taihu::support
         {
             const auto& info = diagnostic_catalog[ static_cast< std::size_t >( id ) ];
             auto        text = std::vformat( info.message, std::make_format_args( args... ) );
-            return DiagnosticBuilder { *this, { .id = id, .severity = info.severity, .message = std::move( text ) } };
+            return DiagnosticBuilder {
+                *this,
+                { .id = id, .severity = info.severity, .message = std::move( text ) }
+            };
         }
 
         [[nodiscard]] std::size_t error_count() const noexcept

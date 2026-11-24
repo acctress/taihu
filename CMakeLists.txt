@@ -37,23 +37,35 @@ endif ()
 
 file(GLOB_RECURSE TAIHU_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/source/*.cppm")
 
-add_executable(taihu)
+add_library(taihu_core STATIC)
+target_sources(taihu_core PUBLIC
+        FILE_SET CXX_MODULES BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/source" FILES ${TAIHU_MODULES})
+target_link_libraries(taihu_core PUBLIC xiao::xiao)
 
-target_sources(taihu
-        PRIVATE
-        FILE_SET CXX_MODULES
-        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/source"
-        FILES ${TAIHU_MODULES}
-        PRIVATE
-        source/entry.cpp
-)
+add_executable(taihu source/entry.cpp)
+target_link_libraries(taihu PRIVATE taihu_core)
 
 target_compile_definitions(taihu PRIVATE TAIHU_VERSION="${PROJECT_VERSION}")
-
-target_link_libraries(taihu PRIVATE xiao::xiao)
 
 set_target_properties(taihu PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/exe"
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/lib"
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/lib"
 )
+
+option(TAIHU_TESTS "build tests" ${PROJECT_IS_TOP_LEVEL})
+if (TAIGU_TESTS)
+    include(FetchContent)
+    FetchContent_Declare(catch2
+            URL https://github.com/catchorg/Catch2/archive/refs/tags/v3.7.1.tar.gz
+            URL_HASH SHA256=c991b247a1a0d7bb9c39aa35faf0fe9e19764213f28ffba3109388e62ee0269c)
+    FetchContent_MakeAvailable(catch2)
+
+    file(GLOB TAIHU_TEST_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
+    add_executable(taihu_tests ${TAIHU_TEST_SOURCES})
+    target_link_libraries(taihu_tests PRIVATE taihu_core Catch2::Catch2WithMain)
+
+    enable_testing()
+    include("${catch2_SOURCE_DIR}/extras/Catch.cmake")
+    catch_discover_tests(taihu_tests)
+endif ()
