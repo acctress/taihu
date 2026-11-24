@@ -1,2 +1,2 @@
 # taihu
-A xiao-based C11 compiler.
+A C23 compiler built on xiao.
