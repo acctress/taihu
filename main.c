@@ -1,4 +1,6 @@
-#define max( a, b ) ( ( a ) > ( b ) ? ( a ) : ( b ) )
+#define str(x) #x
+#define cat(a, b) a ## b
 
-int m = max( 1, 2 );
-int n = max( 1 );
+const char* s = str(hello   world);
+int cat(my, var) = 1;
+int e = cat(+, /);

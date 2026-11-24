@@ -32,6 +32,19 @@ export namespace taihu::pp
             bool       from_file {};
         };
 
+        struct Item
+        {
+            enum class Role : std::uint8_t
+            {
+                token,
+                paste,
+                placemarker
+            };
+
+            lex::Token token;
+            Role       role {};
+        };
+
         using Args = std::vector< std::vector< lex::Token > >;
 
         support::SourceManager&                             m_sources;
@@ -53,21 +66,24 @@ export namespace taihu::pp
         lex::Token                next_file();
         lex::Token                lex_file();
         lex::Token                peek_file();
+        lex::Token                stringify( const std::vector< lex::Token >& arg, const lex::Token& hash, support::SourceRange call );
         std::vector< lex::Token > rest_of_ln();
         std::vector< lex::Token > expand_arg( const std::vector< lex::Token >& arg );
         std::vector< lex::Token > sub( const Macro& macro, const Args& args, support::SourceRange call );
-        Raw                       raw();
-        bool                      enter( lex::Token& name );
-        bool                      push( Macro& macro, const lex::Token& name, std::vector< lex::Token > tokens );
-        bool                      parse_params( Macro& macro, lex::Token open );
-        void                      directive();
-        void                      dispatch();
-        void                      define( const lex::Token& directive );
-        void                      undef( const lex::Token& directive );
-        void                      check_body( const Macro& macro ) const;
-        [[nodiscard]] bool        same_body( const Macro& a, const Macro& b ) const;
-        [[nodiscard]] std::string cleaned( const lex::Token& token ) const;
-        std::optional< Args >     collect_args( const lex::Token& name, const Macro& macro, lex::Token& close );
+        [[nodiscard]] std::vector< lex::Token > scratch( std::string_view txt, support::SourceRange call ) const;
+        [[nodiscard]] std::vector< lex::Token > paste( const std::vector< Item >& items, support::SourceRange call ) const;
+        Raw                                     raw();
+        bool                                    enter( lex::Token& name );
+        bool                                    push( Macro& macro, const lex::Token& name, std::vector< lex::Token > tokens );
+        bool                                    parse_params( Macro& macro, const lex::Token& open );
+        void                                    directive();
+        void                                    dispatch();
+        void                                    define( const lex::Token& directive );
+        void                                    undef( const lex::Token& directive );
+        void                                    check_body( const Macro& macro ) const;
+        [[nodiscard]] bool                      same_body( const Macro& a, const Macro& b ) const;
+        [[nodiscard]] std::string               cleaned( const lex::Token& token ) const;
+        std::optional< Args >                   collect_args( const lex::Token& name, const Macro& macro, lex::Token& close );
     };
 
     Preprocessor::Preprocessor( support::SourceManager& sources, support::DiagnosticEngine& diags, support::Interner& interner,
@@ -324,6 +340,12 @@ export namespace taihu::pp
             if ( token.is( lex::TokenKind::identifier ) && ( token.symbol == m_va_args || token.symbol == m_va_opt ) )
                 m_diags.report( DiagnosticId::va_args_outside_variadic, token.symbol->text ).primary( token.range(), "not allowed here" );
 
+        if ( macro.function )
+            for ( std::size_t i {}; i < macro.body.size(); ++i )
+                if ( macro.body[ i ].is( lex::TokenKind::hash ) && ( i + 1 == macro.body.size() || !macro.param( macro.body[ i + 1 ] ) ) )
+                    m_diags.report( DiagnosticId::stringify_needs_parameter )
+                        .primary( macro.body[ i ].range(), "not followed by a parameter" );
+
         if ( macro.body.empty() ) return;
         if ( macro.body.front().is( lex::TokenKind::hash_hash ) )
             m_diags.report( DiagnosticId::hash_hash_at_edge, "start" )
@@ -402,38 +424,61 @@ export namespace taihu::pp
     std::vector< lex::Token > Preprocessor::sub( const Macro& macro, const Args& args, support::SourceRange call )
     {
         using lex::TokenFlags;
+        using lex::TokenKind;
+        using Role = Item::Role;
+
+        const auto& body   = macro.body;
+        const auto  pasted = [ & ]( const std::size_t i )
+        {
+            return ( i > 0 && body[ i - 1 ].is( TokenKind::hash_hash ) )
+                || ( i + 1 < body.size() && body[ i + 1 ].is( TokenKind::hash_hash ) );
+        };
 
         std::vector< std::optional< std::vector< lex::Token > > > expanded( args.size() );
-        std::vector< lex::Token >                                 out;
-        out.reserve( macro.body.size() );
+        std::vector< Item >                                       items;
+        items.reserve( body.size() );
 
-        for ( const auto& body : macro.body )
+        for ( std::size_t i {}; i < body.size(); ++i )
         {
-            if ( const auto idx = macro.param( body ) )
+            const auto& token = body[ i ];
+
+            if ( macro.function && token.is( TokenKind::hash ) && i + 1 < body.size() )
+                if ( const auto idx = macro.param( body[ i + 1 ] ) )
+                {
+                    items.push_back( { stringify( args[ *idx ], token, call ) } );
+                    ++i;
+                    continue;
+                }
+
+            if ( const auto idx = macro.param( token ) )
             {
-                auto& arg = expanded[ *idx ];
-                if ( !arg ) arg = expand_arg( args[ *idx ] );
-                if ( arg->empty() ) continue;
+                const auto raw_arg = pasted( i );
+                if ( !raw_arg && !expanded[ *idx ] ) expanded[ *idx ] = expand_arg( args[ *idx ] );
+                const auto& arg = raw_arg ? args[ *idx ] : *expanded[ *idx ];
 
-                const auto first = out.size();
+                if ( arg.empty() )
+                {
+                    if ( raw_arg ) items.push_back( { token, Role::placemarker } );
+                    continue;
+                }
 
-                out.append_range( *arg );
-                out[ first ].flags = ( out[ first ].flags & ~( TokenFlags::at_line_start | TokenFlags::leading_space ) )
-                                   | body.flags & TokenFlags::leading_space;
-
+                const auto first = items.size();
+                for ( const auto& piece : arg ) items.push_back( { piece } );
+                auto& lead = items[ first ].token;
+                lead.flags = ( lead.flags & ~( TokenFlags::at_line_start | TokenFlags::leading_space ) )
+                           | ( token.flags & TokenFlags::leading_space );
                 continue;
             }
 
-            auto token = body;
-
-            token.location = m_sources.add_expansion( body.location, call, body.length );
-            out.push_back( token );
+            auto copy     = token;
+            copy.location = m_sources.add_expansion( token.location, call, token.length );
+            items.push_back( { copy, token.is( TokenKind::hash_hash ) ? Role::paste : Role::token } );
         }
 
-        return out;
+        return paste( items, call );
     }
 
-    bool Preprocessor::parse_params( Macro& macro, lex::Token open )
+    bool Preprocessor::parse_params( Macro& macro, const lex::Token& open )
     {
         using lex::TokenKind;
         using support::DiagnosticId;
@@ -547,5 +592,113 @@ export namespace taihu::pp
             .secondary( macro.name, "defined here" );
 
         return std::nullopt;
+    }
+
+    lex::Token Preprocessor::stringify( const std::vector< lex::Token >& arg, const lex::Token& hash, support::SourceRange call )
+    {
+        using lex::TokenFlags;
+        using lex::TokenKind;
+
+        std::string text = "\"";
+        for ( std::size_t i {}; i < arg.size(); ++i )
+        {
+            const auto& token = arg[ i ];
+            if ( i > 0 && token.has( TokenFlags::leading_space | TokenFlags::at_line_start ) ) text += ' ';
+
+            const auto spelling = cleaned( token );
+            if ( !token.is( TokenKind::string_literal ) && !token.is( TokenKind::char_constant ) )
+            {
+                text += spelling;
+                continue;
+            }
+
+            for ( const char c : spelling )
+            {
+                if ( c == '"' || c == '\\' ) text += '\\';
+                text += c;
+            }
+        }
+
+        text += '"';
+
+        const auto tokens = scratch( text, call );
+        if ( tokens.size() != 1 || !tokens.front().is( TokenKind::string_literal ) )
+            m_diags.report( support::DiagnosticId::invalid_stringify )
+                .primary( call, "in this expansion" )
+                .secondary( hash.range(), "stringified here" );
+
+        auto result = tokens.front();
+        result.flags
+            = ( result.flags & ~( TokenFlags::at_line_start | TokenFlags::leading_space ) ) | ( hash.flags & TokenFlags::leading_space );
+
+        return result;
+    }
+
+    std::vector< lex::Token > Preprocessor::scratch( const std::string_view txt, const support::SourceRange call ) const
+    {
+        const auto                file = m_sources.add_file( "<scratch>", std::string { txt } );
+        support::DiagnosticEngine diags { m_sources };
+        lex::Lexer                lexer { m_sources, file, diags, m_interner, m_options };
+
+        std::vector< lex::Token > tokens;
+        for ( auto token = lexer.next(); !token.is( lex::TokenKind::eof ); token = lexer.next() )
+        {
+            token.location = m_sources.add_expansion( token.location, call, token.length );
+            tokens.push_back( token );
+        }
+
+        return tokens;
+    }
+
+    std::vector< lex::Token > Preprocessor::paste( const std::vector< Item >& items, const support::SourceRange call ) const
+    {
+        using lex::TokenFlags;
+        using Role = Item::Role;
+
+        constexpr auto pos = TokenFlags::at_line_start | TokenFlags::leading_space;
+
+        std::vector< Item > done;
+        done.reserve( items.size() );
+
+        for ( std::size_t i {}; i < items.size(); ++i )
+        {
+            if ( items[ i ].role != Role::paste || done.empty() || i + 1 == items.size() )
+            {
+                done.push_back( items[ i ] );
+                continue;
+            }
+
+            auto&       lhs = done.back();
+            const auto& rhs = items[ ++i ];
+
+            if ( rhs.role == Role::placemarker ) continue;
+            if ( lhs.role == Role::placemarker )
+            {
+                const auto space = lhs.token.flags & TokenFlags::leading_space;
+                lhs              = rhs;
+                lhs.token.flags  = lhs.token.flags & ~pos | space;
+                continue;
+            }
+
+            const auto left  = cleaned( lhs.token );
+            const auto right = cleaned( rhs.token );
+
+            if ( auto tokens = scratch( left + right, call ); tokens.size() == 1 )
+            {
+                tokens.front().flags = tokens.front().flags & ~pos | lhs.token.flags & TokenFlags::leading_space;
+                lhs.token            = tokens.front();
+                continue;
+            }
+
+            m_diags.report( support::DiagnosticId::invalid_paste, left, right ).primary( call, "pasted in this expansion" );
+            done.push_back( rhs );
+        }
+
+        std::vector< lex::Token > out;
+        out.reserve( done.size() );
+        for ( const auto& [ token, role ] : done )
+            if ( role != Role::placemarker ) out.push_back( token );
+
+        return out;
     }
 } // namespace taihu::pp

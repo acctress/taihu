@@ -74,7 +74,7 @@ TEST_CASE( "spec constraints on object-like macros", "[pp]" )
     CHECK( Preprocessed { "#define X ##" }.reported( DiagnosticId::hash_hash_at_edge ) == 1 );
 }
 
-TEST_CASE( "## pastes in object-like macros", "[pp][!shouldfail]" )
+TEST_CASE( "## pastes in object-like macros", "[pp]" )
 { CHECK( Preprocessed { "#define XY x ## y\nXY" }.text() == "xy" ); }
 
 TEST_CASE( "expanded tokens point at the body and the use", "[pp]" )
@@ -213,3 +213,120 @@ TEST_CASE( "C23 6.10.5.4 EXAMPLE gives one of its two answers", "[pp][function]"
 
 TEST_CASE( "printer keeps a call that spans lines on one line", "[pp][printer][function]" )
 { CHECK( Preprocessed { "#define add(a, b) a + b\nint x = add(1,\n    2);" }.printed( { .line_markers = false } ) == "int x = 1 + 2;\n" ); }
+
+TEST_CASE( "# turns an argument into a string", "[pp][hash]" )
+{
+    const auto str = []( const std::string_view use ) { return Preprocessed { std::format( "#define str(x) #x\n{}", use ) }.text(); };
+    CHECK( str( "str(a + b)" ) == R"("a + b")" );
+    CHECK( str( "str(  a   +\n  b  )" ) == R"("a + b")" );
+    CHECK( str( "str()" ) == R"("")" );
+    CHECK( str( R"(str("a\n" '\''))" ) == R"("\"a\\n\" '\\''")" );
+    CHECK( Preprocessed { "#define str(x) #x\nstr(a,b)" }.reported( DiagnosticId::macro_argument_count ) == 1 );
+}
+
+TEST_CASE( "# uses the argument before it is expanded", "[pp][hash]" )
+{
+    CHECK( Preprocessed { "#define N 1\n#define str(x) #x\nstr(N)" }.text() == R"("N")" );
+    CHECK( Preprocessed { "#define N 1\n#define str(x) #x\n#define xstr(x) str(x)\nxstr(N)" }.text() == R"("1")" );
+}
+
+TEST_CASE( "# is an ordinary token in an object-like macro", "[pp][hash]" )
+{
+    CHECK( Preprocessed { "#define H # x\nH" }.text() == "# x" );
+}
+
+TEST_CASE( "# must be followed by a parameter", "[pp][hash]" )
+{
+    CHECK( Preprocessed { "#define f(x) #y" }.reported( DiagnosticId::stringify_needs_parameter ) == 1 );
+    CHECK( Preprocessed { "#define f(x) x #" }.reported( DiagnosticId::stringify_needs_parameter ) == 1 );
+    CHECK( Preprocessed { "#define f(x) #x" }.diags.all().empty() );
+}
+
+TEST_CASE( "## glues two tokens into one", "[pp][hash]" )
+{
+    const auto cat = []( const std::string_view use ) { return Preprocessed { std::format( "#define cat(a, b) a ## b\n{}", use ) }; };
+    CHECK( cat( "cat(x, y)" ).text() == "xy" );
+    CHECK( cat( "cat(1, 2)" ).text() == "12" );
+    CHECK( cat( "cat(x, 1)" ).text() == "x1" );
+    CHECK( cat( "cat(a b, c d)" ).text() == "a bc d" );
+
+    const auto op = cat( "cat(+, =)" );
+    REQUIRE( op.tokens.size() == 1 );
+    CHECK( op.tokens[ 0 ].is( lex::TokenKind::plus_equal ) );
+}
+
+TEST_CASE( "## uses the argument before it is expanded", "[pp][hash]" )
+{
+    CHECK( Preprocessed { "#define N 1\n#define cat(a, b) a ## b\ncat(N, 2)" }.text() == "N2" );
+    CHECK( Preprocessed { "#define xy 42\n#define cat(a, b) a ## b\ncat(x, y)" }.text() == "42" );
+}
+
+TEST_CASE( "a paste that is not one token is an error", "[pp][hash]" )
+{
+    const Preprocessed pp { "#define cat(a, b) a ## b\ncat(+, /)" };
+    CHECK( pp.reported( DiagnosticId::invalid_paste ) == 1 );
+    CHECK( pp.text() == "+ /" );
+}
+
+TEST_CASE( "a ## that comes from an argument is not an operator", "[pp][hash]" )
+{
+    const Preprocessed pp { "#define hash_hash # ## #\n"
+                            "#define mkstr(a) # a\n"
+                            "#define in_between(a) mkstr(a)\n"
+                            "#define join(c, d) in_between(c hash_hash d)\n"
+                            "char p[] = join(x, y);" };
+    CHECK( pp.text() == R"(char p [ ] = "x ## y" ;)" );
+}
+
+TEST_CASE( "C23 6.10.5.5 EXAMPLE 3", "[pp][hash]" )
+{
+    const Preprocessed pp { "#define p() int\n"
+                            "#define q(x) x\n"
+                            "#define r(x,y) x ## y\n"
+                            "#define str(x) # x\n"
+                            "p() i[q()] = { q(1), r(2,3), r(4,), r(,5), r(,) };\n"
+                            "char c[2][6] = { str(hello), str() };\n" };
+    const Preprocessed expected { "int i[] = { 1, 23, 4, 5, };\n"
+                                  "char c[2][6] = { \"hello\", \"\" };\n" };
+    CHECK( pp.text() == expected.text() );
+    CHECK( pp.diags.all().empty() );
+}
+
+TEST_CASE( "C23 6.10.5.5 EXAMPLE 4", "[pp][hash]" )
+{
+    const Preprocessed pp { R"x(#define str(s) # s
+#define xstr(s) str(s)
+#define debug(s, t) printf("x" # s "= %d, x" # t "= %s", \
+ x ## s, x ## t)
+#define INCFILE(n) vers ## n
+#define glue(a, b) a ## b
+#define xglue(a, b) glue(a, b)
+#define HIGHLOW "hello"
+#define LOW LOW ", world"
+debug(1, 2);
+fputs(str(strncmp("abc\0d", "abc", '\4') // this goes away
+ == 0) str(: @\n), s);
+xstr(INCFILE(2).h)
+glue(HIGH, LOW);
+xglue(HIGH, LOW)
+)x" };
+    const Preprocessed expected { R"x(printf("x" "1" "= %d, x" "2" "= %s", x1, x2);
+fputs("strncmp(\"abc\\0d\", \"abc\", '\\4') == 0" ": @\n", s);
+"vers2.h"
+"hello";
+"hello" ", world"
+)x" };
+    CHECK( pp.text() == expected.text() );
+    CHECK( pp.diags.all().empty() );
+}
+
+TEST_CASE( "C23 6.10.5.5 EXAMPLE 5", "[pp][hash]" )
+{
+    const Preprocessed pp { "#define t(x,y,z) x ## y ## z\n"
+                            "int j[] = { t(1,2,3), t(,4,5), t(6,,7), t(8,9,),\n"
+                            "            t(10,,), t(,11,), t(,,12), t(,,) };\n" };
+    const Preprocessed expected { "int j[] = { 123, 45, 67, 89,\n"
+                                  "            10, 11, 12, };\n" };
+    CHECK( pp.text() == expected.text() );
+    CHECK( pp.diags.all().empty() );
+}

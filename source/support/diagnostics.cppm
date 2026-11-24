@@ -45,36 +45,44 @@ export namespace taihu::support
         unclosed_parameter_list,
         unterminated_macro_call,
         macro_argument_count,
+        stringify_needs_parameter,
+        invalid_stringify,
+        invalid_paste,
         count
     };
 
     template <>
     struct EnumNames< DiagnosticId >
     {
-        static constexpr std::array names { "unterminated_comment",
-                                            "missing_terminating_quote",
-                                            "incomplete_universal_character",
-                                            "invalid_universal_character",
-                                            "empty_char_constant",
-                                            "unknown_option",
-                                            "missing_value",
-                                            "invalid_value",
-                                            "missing_input",
-                                            "cannot_open_file",
-                                            "missing_macro_name",
-                                            "macro_name_not_identifier",
-                                            "macro_redefined",
-                                            "missing_space_after_macro_name",
-                                            "unknown_directive",
-                                            "extra_tokens_after_directive",
-                                            "vertical_space_in_directive",
-                                            "va_args_outside_variadic",
-                                            "hash_hash_at_edge",
-                                            "expected_parameter",
-                                            "duplicate_parameter",
-                                            "unclosed_parameter_list",
-                                            "unterminated_macro_call",
-                                            "macro_argument_count" };
+        static constexpr std::array names {
+            "unterminated_comment",
+            "missing_terminating_quote",
+            "incomplete_universal_character",
+            "invalid_universal_character",
+            "empty_char_constant",
+            "unknown_option",
+            "missing_value",
+            "invalid_value",
+            "missing_input",
+            "cannot_open_file",
+            "missing_macro_name",
+            "macro_name_not_identifier",
+            "macro_redefined",
+            "missing_space_after_macro_name",
+            "unknown_directive",
+            "extra_tokens_after_directive",
+            "vertical_space_in_directive",
+            "va_args_outside_variadic",
+            "hash_hash_at_edge",
+            "expected_parameter",
+            "duplicate_parameter",
+            "unclosed_parameter_list",
+            "unterminated_macro_call",
+            "macro_argument_count",
+            "stringify_needs_parameter",
+            "invalid_stringify",
+            "invalid_paste",
+        };
     };
 
     static_assert( EnumNames< DiagnosticId >::names.size() == static_cast< std::size_t >( DiagnosticId::count ) );
@@ -168,6 +176,12 @@ export namespace taihu::support
               "C23 §6.10.5p10" },
          { DiagnosticId::unterminated_macro_call, Severity::error, "E0212", "", "the call to `{}` has no closing `)`", "C23 §6.10.5p4" },
          { DiagnosticId::macro_argument_count, Severity::error, "E0213", "", "`{}` takes {} but was given {}", "C23 §6.10.5p4" },
+         { DiagnosticId::stringify_needs_parameter, Severity::error, "E0214", "",
+              "`#` must be followed by a parameter in a function-like macro", "C23 §6.10.5.2p1" },
+         { DiagnosticId::invalid_stringify, Severity::error, "E0215", "", "`#` does not make a valid string literal here",
+              "C23 §6.10.5.2p4" },
+         { DiagnosticId::invalid_paste, Severity::error, "E0216", "", "pasting `{}` and `{}` does not give a valid token",
+              "C23 §6.10.5.3p3" },
          }
     };
 
