@@ -216,7 +216,10 @@ TEST_CASE( "printer keeps a call that spans lines on one line", "[pp][printer][f
 
 TEST_CASE( "# turns an argument into a string", "[pp][hash]" )
 {
-    const auto str = []( const std::string_view use ) { return Preprocessed { std::format( "#define str(x) #x\n{}", use ) }.text(); };
+    const auto str = []( const std::string_view use )
+    {
+        return Preprocessed { std::format( "#define str(x) #x\n{}", use ) }.text();
+    };
     CHECK( str( "str(a + b)" ) == R"("a + b")" );
     CHECK( str( "str(  a   +\n  b  )" ) == R"("a + b")" );
     CHECK( str( "str()" ) == R"("")" );
@@ -231,9 +234,7 @@ TEST_CASE( "# uses the argument before it is expanded", "[pp][hash]" )
 }
 
 TEST_CASE( "# is an ordinary token in an object-like macro", "[pp][hash]" )
-{
-    CHECK( Preprocessed { "#define H # x\nH" }.text() == "# x" );
-}
+{ CHECK( Preprocessed { "#define H # x\nH" }.text() == "# x" ); }
 
 TEST_CASE( "# must be followed by a parameter", "[pp][hash]" )
 {
@@ -244,7 +245,10 @@ TEST_CASE( "# must be followed by a parameter", "[pp][hash]" )
 
 TEST_CASE( "## glues two tokens into one", "[pp][hash]" )
 {
-    const auto cat = []( const std::string_view use ) { return Preprocessed { std::format( "#define cat(a, b) a ## b\n{}", use ) }; };
+    const auto cat = []( const std::string_view use )
+    {
+        return Preprocessed { std::format( "#define cat(a, b) a ## b\n{}", use ) };
+    };
     CHECK( cat( "cat(x, y)" ).text() == "xy" );
     CHECK( cat( "cat(1, 2)" ).text() == "12" );
     CHECK( cat( "cat(x, 1)" ).text() == "x1" );
@@ -327,6 +331,124 @@ TEST_CASE( "C23 6.10.5.5 EXAMPLE 5", "[pp][hash]" )
                             "            t(10,,), t(,11,), t(,,12), t(,,) };\n" };
     const Preprocessed expected { "int j[] = { 123, 45, 67, 89,\n"
                                   "            10, 11, 12, };\n" };
+    CHECK( pp.text() == expected.text() );
+    CHECK( pp.diags.all().empty() );
+}
+
+TEST_CASE( "... collects the rest of the arguments into __VA_ARGS__", "[pp][variadic]" )
+{
+    CHECK( Preprocessed { "#define f(...) [__VA_ARGS__]\nf(1, 2, 3)" }.text() == "[ 1 , 2 , 3 ]" );
+    CHECK( Preprocessed { "#define f(a, ...) a: __VA_ARGS__\nf(1, (2, 3), 4)" }.text() == "1 : ( 2 , 3 ) , 4" );
+    CHECK( Preprocessed { "#define f(...) [__VA_ARGS__]\nf()" }.text() == "[ ]" );
+    CHECK( Preprocessed { "#define f(a, ...) [a|__VA_ARGS__]\nf(1)" }.text() == "[ 1 | ]" );
+    CHECK( Preprocessed { "#define f(a, ...) [a|__VA_ARGS__]\nf()" }.text() == "[ | ]" );
+}
+
+TEST_CASE( "a variadic macro needs at least its named arguments", "[pp][variadic]" )
+{
+    const Preprocessed pp { "#define f(a, b, ...) a\nf(1)" };
+    REQUIRE( pp.reported( DiagnosticId::macro_argument_count ) == 1 );
+    CHECK( pp.diags.all().front().message == "`f` takes at least 2 arguments but was given 1 argument" );
+}
+
+TEST_CASE( "... must be the last parameter", "[pp][variadic]" )
+{
+    CHECK( Preprocessed { "#define f(..., a) 1" }.reported( DiagnosticId::unclosed_parameter_list ) == 1 );
+    CHECK( Preprocessed { "#define f(a..." }.reported( DiagnosticId::unclosed_parameter_list ) == 1 );
+}
+
+TEST_CASE( "__VA_ARGS__ works with # and ##", "[pp][variadic]" )
+{
+    CHECK( Preprocessed { "#define s(...) #__VA_ARGS__\ns(a,  b ,c)" }.text() == R"("a, b ,c")" );
+    CHECK( Preprocessed { "#define c(x, ...) x ## __VA_ARGS__\nc(a, b, c)" }.text() == "ab , c" );
+}
+
+TEST_CASE( "__VA_ARGS__ and __VA_OPT__ are only for variadic macros", "[pp][variadic]" )
+{
+    CHECK( Preprocessed { "#define f(a) __VA_ARGS__" }.reported( DiagnosticId::va_args_outside_variadic ) == 1 );
+    CHECK( Preprocessed { "#define f(...) __VA_ARGS__ __VA_OPT__(x)" }.diags.all().empty() );
+}
+
+TEST_CASE( "__VA_OPT__ syntax errors", "[pp][variadic]" )
+{
+    CHECK( Preprocessed { "#define f(...) __VA_OPT__" }.reported( DiagnosticId::va_opt_needs_parens ) == 1 );
+    CHECK( Preprocessed { "#define f(...) __VA_OPT__(a" }.reported( DiagnosticId::va_opt_needs_parens ) == 1 );
+    CHECK( Preprocessed { "#define f(...) __VA_OPT__(__VA_OPT__())" }.reported( DiagnosticId::nested_va_opt ) == 1 );
+    CHECK( Preprocessed { "#define H1(X, ...) X __VA_OPT__(##) __VA_ARGS__" }.reported( DiagnosticId::hash_hash_at_edge ) == 1 );
+    CHECK( Preprocessed { "#define f(...) #__VA_OPT__(a)" }.reported( DiagnosticId::stringify_needs_parameter ) == 0 );
+}
+
+TEST_CASE( "C23 6.10.5.1 EXAMPLE 1", "[pp][variadic]" )
+{
+    const Preprocessed pp { "#define LPAREN() (\n"
+                            "#define G(Q) 42\n"
+                            "#define F(R, X, ...) __VA_OPT__(G R X) )\n"
+                            "int x = F(LPAREN(), 0, <:-);\n" };
+    CHECK( pp.text() == "int x = 42 ;" );
+    CHECK( pp.diags.all().empty() );
+}
+
+TEST_CASE( "C23 6.10.5.1 EXAMPLE 2", "[pp][variadic]" )
+{
+    const Preprocessed pp { "#define F(...) f(0 __VA_OPT__(,) __VA_ARGS__)\n"
+                            "#define G(X, ...) f(0, X __VA_OPT__(,) __VA_ARGS__)\n"
+                            "#define SDEF(sname, ...) S sname __VA_OPT__(= { __VA_ARGS__ })\n"
+                            "#define EMP\n"
+                            "F(a, b, c) F() F(EMP)\n"
+                            "G(a, b, c) G(a, ) G(a)\n"
+                            "SDEF(foo); SDEF(bar, 1, 2);\n"
+                            "#define H2(X, Y, ...) __VA_OPT__(X ## Y,) __VA_ARGS__\n"
+                            "H2(a, b, c, d)\n"
+                            "#define H3(X, ...) #__VA_OPT__(X##X X##X)\n"
+                            "H3(, 0)\n"
+                            "#define H4(X, ...) __VA_OPT__(a X ## X) ## b\n"
+                            "H4(, 1)\n"
+                            "#define H5A(...) __VA_OPT__()/**/__VA_OPT__()\n"
+                            "#define H5B(X) a ## X ## b\n"
+                            "#define H5C(X) H5B(X)\n"
+                            "H5C(H5A())\n" };
+    const Preprocessed expected { "f(0, a, b, c) f(0) f(0)\n"
+                                  "f(0, a, b, c) f(0, a) f(0, a)\n"
+                                  "S foo; S bar = { 1, 2 };\n"
+                                  "ab, c, d\n"
+                                  "\"\"\n"
+                                  "a b\n"
+                                  "ab\n" };
+    CHECK( pp.text() == expected.text() );
+    CHECK( pp.diags.all().empty() );
+}
+
+TEST_CASE( "C23 6.10.5.5 EXAMPLE 6", "[pp][variadic]" )
+{
+    const std::string valid = "#define OBJ_LIKE (1-1)\n"
+                              "#define OBJ_LIKE /* white space */ (1-1) /* other */\n"
+                              "#define FUNC_LIKE(a) ( a )\n"
+                              "#define FUNC_LIKE( a )( /* note the white space */ \\\n"
+                              "                a /* other stuff on this line\n"
+                              "                  */ )\n";
+    CHECK( Preprocessed { valid }.diags.all().empty() );
+
+    for ( const auto* invalid :
+          { "#define OBJ_LIKE (0)\n", "#define OBJ_LIKE (1 - 1)\n", "#define FUNC_LIKE(b) ( a )\n", "#define FUNC_LIKE(b) ( b )\n" } )
+        CHECK( Preprocessed { valid + invalid }.reported( DiagnosticId::macro_redefined ) == 1 );
+}
+
+TEST_CASE( "C23 6.10.5.5 EXAMPLE 7", "[pp][variadic]" )
+{
+    const Preprocessed pp { R"x(#define debug(...) fprintf(stderr, __VA_ARGS__)
+#define showlist(...) puts(#__VA_ARGS__)
+#define report(test, ...) ((test)?puts(#test):\
+            printf(__VA_ARGS__))
+debug("Flag");
+debug("X = %d\n", x);
+showlist(The first, second, and third items.);
+report(x>y, "x is %d but y is %d", x, y);
+)x" };
+    const Preprocessed expected { R"x(fprintf(stderr, "Flag");
+fprintf(stderr, "X = %d\n", x);
+puts("The first, second, and third items.");
+((x>y)?puts("x>y"): printf("x is %d but y is %d", x, y));
+)x" };
     CHECK( pp.text() == expected.text() );
     CHECK( pp.diags.all().empty() );
 }

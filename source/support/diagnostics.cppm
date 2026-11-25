@@ -48,6 +48,19 @@ export namespace taihu::support
         stringify_needs_parameter,
         invalid_stringify,
         invalid_paste,
+        va_opt_needs_parens,
+        nested_va_opt,
+        include_not_found,
+        bad_include,
+        include_too_deep,
+        bad_if_expression,
+        if_division_by_zero,
+        unterminated_conditional,
+        unmatched_conditional,
+        else_after_else,
+        error_directive,
+        warning_directive,
+        defined_needs_name,
         count
     };
 
@@ -82,6 +95,19 @@ export namespace taihu::support
             "stringify_needs_parameter",
             "invalid_stringify",
             "invalid_paste",
+            "va_opt_needs_parens",
+            "nested_va_opt",
+            "include_not_found",
+            "bad_include",
+            "include_too_deep",
+            "bad_if_expression",
+            "if_division_by_zero",
+            "unterminated_conditional",
+            "unmatched_conditional",
+            "else_after_else",
+            "error_directive",
+            "warning_directive",
+            "defined_needs_name",
         };
     };
 
@@ -182,6 +208,23 @@ export namespace taihu::support
               "C23 §6.10.5.2p4" },
          { DiagnosticId::invalid_paste, Severity::error, "E0216", "", "pasting `{}` and `{}` does not give a valid token",
               "C23 §6.10.5.3p3" },
+         { DiagnosticId::va_opt_needs_parens, Severity::error, "E0217", "", "`__VA_OPT__` must be followed by `(` and a matching `)`",
+              "C23 §6.10.5.1p3" },
+         { DiagnosticId::nested_va_opt, Severity::error, "E0218", "", "`__VA_OPT__` cannot appear inside another `__VA_OPT__`",
+              "C23 §6.10.5.1p3" },
+         { DiagnosticId::include_not_found, Severity::error, "E0219", "", "cannot find `{}`", "C23 §6.10.3p1" },
+         { DiagnosticId::bad_include, Severity::error, "E0220", "", "`#include` expects \"file\" or <file>", "C23 §6.10.3p4" },
+         { DiagnosticId::include_too_deep, Severity::error, "E0221", "", "`#include` is nested more than {} files deep",
+              "C23 §6.10.3p6" },
+         { DiagnosticId::bad_if_expression, Severity::error, "E0222", "", "invalid expression in `#{}`", "C23 §6.10.2p3" },
+         { DiagnosticId::if_division_by_zero, Severity::error, "E0223", "", "division by zero in `#{}`", "C23 §6.6p4" },
+         { DiagnosticId::unterminated_conditional, Severity::error, "E0224", "", "`#{}` is never closed by `#endif`", "C23 §6.10.2p17" },
+         { DiagnosticId::unmatched_conditional, Severity::error, "E0225", "", "`#{}` without a matching `#if`", "C23 §6.10.2p17" },
+         { DiagnosticId::else_after_else, Severity::error, "E0226", "", "`#{}` after `#else`", "C23 §6.10.2p17" },
+         { DiagnosticId::error_directive, Severity::error, "E0227", "", "{}", "C23 §6.10.7" },
+         { DiagnosticId::warning_directive, Severity::warning, "W0228", "", "{}", "C23 §6.10.7" },
+         { DiagnosticId::defined_needs_name, Severity::error, "E0229", "", "`defined` must be followed by a macro name",
+              "C23 §6.10.2p1" },
          }
     };
 
@@ -240,18 +283,23 @@ export namespace taihu::support
         [[nodiscard]] const SourceManager& sources() const noexcept
         { return m_sources; }
 
+        void mute( const bool v ) noexcept
+        { m_muted = v; }
+
     private:
         friend class DiagnosticBuilder;
-
-        void emit( Diagnostic&& diagnostic )
-        {
-            if ( diagnostic.severity >= Severity::error ) ++m_errors;
-            m_diagnostics.emplace_back( std::move( diagnostic ) );
-        }
 
         const SourceManager&      m_sources;
         std::vector< Diagnostic > m_diagnostics;
         std::size_t               m_errors {};
+        bool                      m_muted {};
+
+        void emit( Diagnostic&& diagnostic )
+        {
+            if ( m_muted ) return;
+            if ( diagnostic.severity >= Severity::error ) ++m_errors;
+            m_diagnostics.emplace_back( std::move( diagnostic ) );
+        }
     };
 
     DiagnosticBuilder::DiagnosticBuilder( DiagnosticEngine& engine, Diagnostic diagnostic ) :

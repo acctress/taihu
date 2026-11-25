@@ -3,16 +3,20 @@ import std;
 import taihu.support;
 import taihu.lex;
 import :macro;
+import :expr;
 
 export namespace taihu::pp
 {
     class Preprocessor
     {
     public:
+        static constexpr std::size_t max_include_depth = 200;
+
         Preprocessor( support::SourceManager& sources, support::DiagnosticEngine& diags, support::Interner& interner, support::FileId main,
                       lex::LexerOptions options = {} );
 
         void push_file( support::FileId file );
+        void add_include_dir( std::filesystem::path dir );
 
         [[nodiscard]] lex::Token       next();
         [[nodiscard]] std::string_view spelling( const lex::Token& token ) const;
@@ -32,6 +36,40 @@ export namespace taihu::pp
             bool       from_file {};
         };
 
+        struct File
+        {
+            lex::Lexer                  lexer;
+            support::FileId             id;
+            std::optional< lex::Token > saved {};
+        };
+
+        enum class Directive : std::uint8_t
+        {
+            define,
+            undef,
+            include,
+            if_,
+            ifdef,
+            ifndef,
+            elif,
+            elifdef,
+            elifndef,
+            else_,
+            endif,
+            error,
+            warning,
+            pragma
+        };
+
+        struct Cond
+        {
+            support::SourceRange where {};
+            std::string_view     name;
+            std::size_t          depth {};
+            bool                 taken {};
+            bool                 seen_else {};
+        };
+
         struct Item
         {
             enum class Role : std::uint8_t
@@ -45,23 +83,30 @@ export namespace taihu::pp
             Role       role {};
         };
 
-        using Args = std::vector< std::vector< lex::Token > >;
+        using Args     = std::vector< std::vector< lex::Token > >;
+        using Expanded = std::vector< std::optional< std::vector< lex::Token > > >;
 
-        support::SourceManager&                             m_sources;
-        support::DiagnosticEngine&                          m_diags;
-        support::Interner&                                  m_interner;
-        lex::LexerOptions                                   m_options;
-        std::vector< lex::Lexer >                           m_files;
-        std::optional< lex::Token >                         m_peeked {};
-        std::optional< Raw >                                m_unread {};
-        std::vector< Ctx >                                  m_ctxs;
-        std::unordered_map< const support::Symbol*, Macro > m_macros;
-        lex::TokenFlags                                     m_carry {};
-        bool                                                m_in_directive {};
-        const support::Symbol*                              m_define { nullptr };
-        const support::Symbol*                              m_undef { nullptr };
-        const support::Symbol*                              m_va_args { nullptr };
-        const support::Symbol*                              m_va_opt { nullptr };
+        support::SourceManager&                                 m_sources;
+        support::DiagnosticEngine&                              m_diags;
+        support::Interner&                                      m_interner;
+        lex::LexerOptions                                       m_options;
+        std::vector< File >                                     m_files;
+        std::vector< std::filesystem::path >                    m_include_dirs;
+        std::optional< lex::Token >                             m_peeked {};
+        std::optional< Raw >                                    m_unread {};
+        std::vector< Ctx >                                      m_ctxs;
+        std::unordered_map< const support::Symbol*, Macro >     m_macros;
+        lex::TokenFlags                                         m_carry {};
+        bool                                                    m_in_directive {};
+        bool                                                    m_skipping {};
+        std::vector< Cond >                                     m_conds;
+        std::optional< support::FileId >                        m_builtin;
+        std::unordered_map< const support::Symbol*, Directive > m_directives;
+        const support::Symbol*                                  m_defined { nullptr };
+        const support::Symbol*                                  m_file_macro { nullptr };
+        const support::Symbol*                                  m_line_macro { nullptr };
+        const support::Symbol*                                  m_va_args { nullptr };
+        const support::Symbol*                                  m_va_opt { nullptr };
 
         lex::Token                next_file();
         lex::Token                lex_file();
@@ -70,20 +115,40 @@ export namespace taihu::pp
         std::vector< lex::Token > rest_of_ln();
         std::vector< lex::Token > expand_arg( const std::vector< lex::Token >& arg );
         std::vector< lex::Token > sub( const Macro& macro, const Args& args, support::SourceRange call );
+        std::vector< Item > build( const Macro& macro, const Args& args, std::size_t begin, std::size_t end, support::SourceRange call,
+                                   Expanded& expanded );
+        std::vector< Item > va_opt( const Macro& macro, const Args& args, std::size_t at, std::size_t close, support::SourceRange call,
+                                    Expanded& expanded );
         [[nodiscard]] std::vector< lex::Token > scratch( std::string_view txt, support::SourceRange call ) const;
-        [[nodiscard]] std::vector< lex::Token > paste( const std::vector< Item >& items, support::SourceRange call ) const;
+        [[nodiscard]] std::vector< Item >       paste( const std::vector< Item >& items, support::SourceRange call ) const;
         Raw                                     raw();
         bool                                    enter( lex::Token& name );
         bool                                    push( Macro& macro, const lex::Token& name, std::vector< lex::Token > tokens );
         bool                                    parse_params( Macro& macro, const lex::Token& open );
         void                                    directive();
         void                                    dispatch();
-        void                                    define( const lex::Token& directive );
-        void                                    undef( const lex::Token& directive );
-        void                                    check_body( const Macro& macro ) const;
-        [[nodiscard]] bool                      same_body( const Macro& a, const Macro& b ) const;
-        [[nodiscard]] std::string               cleaned( const lex::Token& token ) const;
-        std::optional< Args >                   collect_args( const lex::Token& name, const Macro& macro, lex::Token& close );
+
+        void define( const lex::Token& directive );
+        void undef( const lex::Token& directive );
+        void include( const lex::Token& directive );
+        void open_if( const lex::Token& directive, Directive kind );
+        void next_branch( const lex::Token& directive, Directive kind );
+        void endif( const lex::Token& directive );
+        void message( const lex::Token& directive, Directive kind );
+        void skip_group();
+        void close_conds( std::size_t depth );
+        void no_extra_tokens( const lex::Token& directive );
+        bool condition( const lex::Token& directive, Directive kind );
+        bool evaluate( const lex::Token& directive );
+
+        [[nodiscard]] std::optional< Directive > directive_of( const lex::Token& token ) const;
+
+        void                                                 check_body( const Macro& macro ) const;
+        [[nodiscard]] bool                                   same_body( const Macro& a, const Macro& b ) const;
+        [[nodiscard]] std::string                            cleaned( const lex::Token& token ) const;
+        std::optional< Args >                                collect_args( const lex::Token& name, const Macro& macro, lex::Token& close );
+        [[nodiscard]] std::optional< std::filesystem::path > find_include( std::string_view name, bool angled, support::FileId from ) const;
+        [[nodiscard]] std::vector< std::filesystem::path >   search_dirs( bool angled, support::FileId from ) const;
     };
 
     Preprocessor::Preprocessor( support::SourceManager& sources, support::DiagnosticEngine& diags, support::Interner& interner,
@@ -92,19 +157,57 @@ export namespace taihu::pp
         m_diags { diags },
         m_interner { interner },
         m_options { options },
-        m_define { interner.intern( "define" ) },
-        m_undef { interner.intern( "undef" ) },
         m_va_args { interner.intern( "__VA_ARGS__" ) },
         m_va_opt { interner.intern( "__VA_OPT__" ) }
-    { push_file( main ); }
+    {
+        constexpr std::array< std::pair< std::string_view, Directive >, 14 > directives {
+            {
+             { "define", Directive::define },
+             { "undef", Directive::undef },
+             { "include", Directive::include },
+             { "if", Directive::if_ },
+             { "ifdef", Directive::ifdef },
+             { "ifndef", Directive::ifndef },
+             { "elif", Directive::elif },
+             { "elifdef", Directive::elifdef },
+             { "elifndef", Directive::elifndef },
+             { "else", Directive::else_ },
+             { "endif", Directive::endif },
+             { "error", Directive::error },
+             { "warning", Directive::warning },
+             { "pragma", Directive::pragma },
+             }
+        };
+        for ( const auto& [ text, kind ] : directives ) m_directives.emplace( interner.intern( text ), kind );
+
+        push_file( main );
+        m_builtin = sources.add_file( "<builtin>", "#define __STDC__ 1\n"
+                                                   "#define __STDC_VERSION__ 202311L\n"
+                                                   "#define __STDC_HOSTED__ 1\n"
+                                                   "#define __STDC_UTF_16__ 1\n"
+                                                   "#define __STDC_UTF_32__ 1\n"
+                                                   "#define __FILE__ __FILE__\n"
+                                                   "#define __LINE__ __LINE__\n" );
+    }
 
     void Preprocessor::push_file( const support::FileId file )
-    { m_files.emplace_back( m_sources, file, m_diags, m_interner, m_options ); }
+    {
+        if ( m_peeked ) m_files.back().saved = std::exchange( m_peeked, std::nullopt );
+        m_files.push_back( {
+            lex::Lexer { m_sources, file, m_diags, m_interner, m_options },
+             file
+        } );
+    }
+
+    void Preprocessor::add_include_dir( std::filesystem::path dir )
+    { m_include_dirs.push_back( std::move( dir ) ); }
 
     lex::Token Preprocessor::next()
     {
         using lex::TokenFlags;
         using lex::TokenKind;
+
+        if ( m_builtin ) push_file( *std::exchange( m_builtin, std::nullopt ) );
 
         for ( ;; )
         {
@@ -115,6 +218,8 @@ export namespace taihu::pp
                 directive();
                 continue;
             }
+
+            if ( ff && token.is( TokenKind::eof ) ) close_conds( 0 );
 
             if ( token.is( TokenKind::identifier ) && enter( token ) ) continue;
 
@@ -135,7 +240,16 @@ export namespace taihu::pp
     {
         for ( ;; )
         {
-            if ( const auto token = m_files.back().next(); !token.is( lex::TokenKind::eof ) || m_files.size() == 1 ) return token;
+            auto& t = m_files.back();
+            if ( t.saved ) return *std::exchange( t.saved, std::nullopt );
+
+            m_diags.mute( m_skipping );
+            const auto token = t.lexer.next();
+            m_diags.mute( false );
+
+            if ( !token.is( lex::TokenKind::eof ) || m_files.size() == 1 ) return token;
+            close_conds( m_files.size() - 1 );
+
             m_files.pop_back();
         }
     }
@@ -205,6 +319,16 @@ export namespace taihu::pp
             return false;
         }
 
+        if ( ( name.symbol == m_file_macro || name.symbol == m_line_macro ) && macro.body.size() == 1
+             && macro.body.front().symbol == name.symbol )
+        {
+            const auto where = m_sources.file_location( name.location );
+            const auto text  = name.symbol == m_line_macro ? std::to_string( m_sources.line_column( where ).line )
+                                                           : std::format( "{:?}", m_sources.path( m_sources.decompose( where ).file ) );
+
+            return push( macro, name, scratch( text, name.range() ) );
+        }
+
         if ( !macro.function ) return push( macro, name, sub( macro, {}, name.range() ) );
 
         if ( const auto next = raw(); !next.token.is( lex::TokenKind::l_paren ) )
@@ -234,12 +358,31 @@ export namespace taihu::pp
 
         lex_file();
 
-        if ( name.is( lex::TokenKind::identifier ) && name.symbol == m_define ) return define( name );
-        if ( name.is( lex::TokenKind::identifier ) && name.symbol == m_undef ) return undef( name );
+        const auto kind = directive_of( name );
+        if ( !kind )
+        {
+            m_diags.report( support::DiagnosticId::unknown_directive, spelling( name ) ).primary( name.range(), "not a directive" );
+            static_cast< void >( rest_of_ln() );
+            return;
+        }
 
-        m_diags.report( support::DiagnosticId::unknown_directive, spelling( name ) ).primary( name.range(), "not a directive" );
-
-        static_cast< void >( rest_of_ln() );
+        switch ( *kind )
+        {
+            case Directive::define: return define( name );
+            case Directive::undef: return undef( name );
+            case Directive::include: return include( name );
+            case Directive::if_:
+            case Directive::ifdef:
+            case Directive::ifndef: return open_if( name, *kind );
+            case Directive::elif:
+            case Directive::elifdef:
+            case Directive::elifndef:
+            case Directive::else_: return next_branch( name, *kind );
+            case Directive::endif: return endif( name );
+            case Directive::error:
+            case Directive::warning: return message( name, *kind );
+            case Directive::pragma: static_cast< void >( rest_of_ln() ); return;
+        }
     }
 
     void Preprocessor::define( const lex::Token& directive )
@@ -332,19 +475,157 @@ export namespace taihu::pp
                 .primary( { ext.front().location, ext.back().range().end }, "`#undef` takes one name" );
     }
 
+    void Preprocessor::include( const lex::Token& directive )
+    {
+        using lex::TokenFlags;
+        using lex::TokenKind;
+        using support::DiagnosticId;
+
+        const auto           from = m_files.back().id;
+        std::string          name;
+        bool                 angled {};
+        support::SourceRange where {};
+
+        if ( const auto header = m_files.back().lexer.next_header_name() )
+        {
+            const auto text = spelling( *header );
+            angled          = text.front() == '<';
+            name            = text.substr( 1, text.size() - 2 );
+            where           = header->range();
+
+            if ( const auto ext = rest_of_ln(); !ext.empty() )
+                m_diags.report( DiagnosticId::extra_tokens_after_directive, "include" )
+                    .primary( { ext.front().location, ext.back().range().end }, "`#include` takes one file name" );
+        }
+        else
+        {
+            const auto line = rest_of_ln();
+            if ( line.empty() )
+            {
+                m_diags.report( DiagnosticId::bad_include ).primary( directive.range(), "expected a file name after this" );
+                return;
+            }
+
+            where = { line.front().location, line.back().range().end };
+
+            if ( const auto tokens = expand_arg( line );
+                 tokens.size() == 1 && tokens.front().is( TokenKind::string_literal ) && tokens.front().encoding == lex::Encoding::none )
+            {
+                const auto text = cleaned( tokens.front() );
+                name            = text.substr( 1, text.size() - 2 );
+            }
+            else if ( tokens.size() >= 2 && tokens.front().is( TokenKind::less ) && tokens.back().is( TokenKind::greater ) )
+            {
+                angled = true;
+                for ( std::size_t i { 1 }; i + 1 < tokens.size(); ++i )
+                {
+                    if ( i > 1 && tokens[ i ].has( TokenFlags::leading_space ) ) name += ' ';
+                    name += cleaned( tokens[ i ] );
+                }
+            }
+            else
+            {
+                m_diags.report( DiagnosticId::bad_include ).primary( where, "this is not \"file\" or <file>" );
+                return;
+            }
+        }
+
+        if ( name.empty() )
+        {
+            m_diags.report( DiagnosticId::bad_include ).primary( where, "the file name is empty" );
+            return;
+        }
+
+        if ( m_files.size() >= max_include_depth )
+        {
+            m_diags.report( DiagnosticId::include_too_deep, max_include_depth ).primary( where, "included here" );
+            return;
+        }
+
+        const auto path = find_include( name, angled, from );
+        if ( !path )
+        {
+            std::string searched;
+            for ( const auto& dir : search_dirs( angled, from ) )
+                std::format_to( std::back_inserter( searched ), "{}`{}`", searched.empty() ? "" : ", ", dir.generic_string() );
+
+            auto report = m_diags.report( DiagnosticId::include_not_found, name );
+            report.primary( where, "not found" );
+            if ( searched.empty() ) report.help( "no folders to search; add one with `-I <dir>`" );
+            else
+                report.help( std::format( "searched {}", searched ) );
+            return;
+        }
+
+        const auto file = m_sources.load_file( *path );
+        if ( !file )
+        {
+            m_diags.report( DiagnosticId::cannot_open_file, path->generic_string() ).primary( where, "included here" );
+            return;
+        }
+
+        push_file( *file );
+    }
+
+    void Preprocessor::endif( const lex::Token& directive )
+    {
+        if ( m_conds.empty() )
+            m_diags.report( support::DiagnosticId::unmatched_conditional, spelling( directive ) )
+                .primary( directive.range(), "no `#if` if open" );
+        else
+            m_conds.pop_back();
+
+        no_extra_tokens( directive );
+    }
+
     void Preprocessor::check_body( const Macro& macro ) const
     {
         using support::DiagnosticId;
 
-        for ( const auto& token : macro.body )
-            if ( token.is( lex::TokenKind::identifier ) && ( token.symbol == m_va_args || token.symbol == m_va_opt ) )
-                m_diags.report( DiagnosticId::va_args_outside_variadic, token.symbol->text ).primary( token.range(), "not allowed here" );
+        const auto& body      = macro.body;
+        const auto  is_va_opt = [ & ]( const lex::Token& token )
+        {
+            return token.is( lex::TokenKind::identifier ) && token.symbol == m_va_opt;
+        };
+
+        if ( !macro.variadic )
+            for ( const auto& token : body )
+                if ( token.is( lex::TokenKind::identifier ) && ( token.symbol == m_va_args || token.symbol == m_va_opt ) )
+                    m_diags.report( DiagnosticId::va_args_outside_variadic, token.symbol->text )
+                        .primary( token.range(), "not allowed here" );
+
+        if ( macro.variadic )
+            for ( std::size_t i {}; i < body.size(); ++i )
+            {
+                if ( !is_va_opt( body[ i ] ) ) continue;
+
+                const auto close = macro.va_opt_end( i );
+                if ( !close )
+                {
+                    m_diags.report( DiagnosticId::va_opt_needs_parens )
+                        .primary( body[ i ].range(), "expected `(` and a matching `)` afer this" );
+                    continue;
+                }
+
+                for ( auto j { i + 2 }; j < *close; ++j )
+                    if ( is_va_opt( body[ j ] ) ) m_diags.report( DiagnosticId::nested_va_opt ).primary( body[ j ].range(), "nested here" );
+
+                if ( *close > i + 2 && body[ i + 2 ].is( lex::TokenKind::hash_hash ) )
+                    m_diags.report( DiagnosticId::hash_hash_at_edge, "start" )
+                        .primary( body[ i + 2 ].range(), "nothing to paste on the left" );
+
+                if ( *close > i + 3 && body[ *close - 1 ].is( lex::TokenKind::hash_hash ) )
+                    m_diags.report( DiagnosticId::hash_hash_at_edge, "end" )
+                        .primary( body[ *close - 1 ].range(), "nothing to paste on the right" );
+
+                i = *close;
+            }
 
         if ( macro.function )
-            for ( std::size_t i {}; i < macro.body.size(); ++i )
-                if ( macro.body[ i ].is( lex::TokenKind::hash ) && ( i + 1 == macro.body.size() || !macro.param( macro.body[ i + 1 ] ) ) )
-                    m_diags.report( DiagnosticId::stringify_needs_parameter )
-                        .primary( macro.body[ i ].range(), "not followed by a parameter" );
+            for ( std::size_t i {}; i < body.size(); ++i )
+                if ( body[ i ].is( lex::TokenKind::hash )
+                     && ( i + 1 == body.size() || ( !macro.param( body[ i + 1 ] ) && !( macro.variadic && is_va_opt( body[ i + 1 ] ) ) ) ) )
+                    m_diags.report( DiagnosticId::stringify_needs_parameter ).primary( body[ i ].range(), "not followed by a parameter" );
 
         if ( macro.body.empty() ) return;
         if ( macro.body.front().is( lex::TokenKind::hash_hash ) )
@@ -423,59 +704,14 @@ export namespace taihu::pp
 
     std::vector< lex::Token > Preprocessor::sub( const Macro& macro, const Args& args, support::SourceRange call )
     {
-        using lex::TokenFlags;
-        using lex::TokenKind;
-        using Role = Item::Role;
+        Expanded   expanded( args.size() );
+        const auto items = paste( build( macro, args, 0, macro.body.size(), call, expanded ), call );
 
-        const auto& body   = macro.body;
-        const auto  pasted = [ & ]( const std::size_t i )
-        {
-            return ( i > 0 && body[ i - 1 ].is( TokenKind::hash_hash ) )
-                || ( i + 1 < body.size() && body[ i + 1 ].is( TokenKind::hash_hash ) );
-        };
-
-        std::vector< std::optional< std::vector< lex::Token > > > expanded( args.size() );
-        std::vector< Item >                                       items;
-        items.reserve( body.size() );
-
-        for ( std::size_t i {}; i < body.size(); ++i )
-        {
-            const auto& token = body[ i ];
-
-            if ( macro.function && token.is( TokenKind::hash ) && i + 1 < body.size() )
-                if ( const auto idx = macro.param( body[ i + 1 ] ) )
-                {
-                    items.push_back( { stringify( args[ *idx ], token, call ) } );
-                    ++i;
-                    continue;
-                }
-
-            if ( const auto idx = macro.param( token ) )
-            {
-                const auto raw_arg = pasted( i );
-                if ( !raw_arg && !expanded[ *idx ] ) expanded[ *idx ] = expand_arg( args[ *idx ] );
-                const auto& arg = raw_arg ? args[ *idx ] : *expanded[ *idx ];
-
-                if ( arg.empty() )
-                {
-                    if ( raw_arg ) items.push_back( { token, Role::placemarker } );
-                    continue;
-                }
-
-                const auto first = items.size();
-                for ( const auto& piece : arg ) items.push_back( { piece } );
-                auto& lead = items[ first ].token;
-                lead.flags = ( lead.flags & ~( TokenFlags::at_line_start | TokenFlags::leading_space ) )
-                           | ( token.flags & TokenFlags::leading_space );
-                continue;
-            }
-
-            auto copy     = token;
-            copy.location = m_sources.add_expansion( token.location, call, token.length );
-            items.push_back( { copy, token.is( TokenKind::hash_hash ) ? Role::paste : Role::token } );
-        }
-
-        return paste( items, call );
+        std::vector< lex::Token > out;
+        out.reserve( items.size() );
+        for ( const auto& [ token, role ] : items )
+            if ( role != Item::Role::placemarker ) out.push_back( token );
+        return out;
     }
 
     bool Preprocessor::parse_params( Macro& macro, const lex::Token& open )
@@ -501,6 +737,23 @@ export namespace taihu::pp
             if ( !on_line( param ) )
             {
                 m_diags.report( DiagnosticId::expected_parameter ).primary( last.range(), "expected a parameter name after this" );
+                return false;
+            }
+
+            if ( param.is( TokenKind::ellipsis ) )
+            {
+                lex_file();
+
+                macro.variadic = true;
+                macro.params.push_back( m_va_args );
+
+                if ( const auto close = peek_file(); on_line( close ) && close.is( TokenKind::r_paren ) )
+                {
+                    lex_file();
+                    return true;
+                }
+
+                m_diags.report( DiagnosticId::unclosed_parameter_list ).primary( param.range(), "`...` must be the last parameter" );
                 return false;
             }
 
@@ -570,7 +823,7 @@ export namespace taihu::pp
                 }
                 --depth;
             }
-            else if ( token.is( TokenKind::comma ) && depth == 0 )
+            else if ( token.is( TokenKind::comma ) && depth == 0 && !( macro.variadic && args.size() == macro.params.size() ) )
             {
                 args.emplace_back();
                 continue;
@@ -579,15 +832,17 @@ export namespace taihu::pp
             args.back().push_back( token );
         }
 
-        if ( macro.params.empty() && args.size() == 1 && args.front().empty() ) args.clear();
+        if ( !macro.variadic && macro.params.empty() && args.size() == 1 && args.front().empty() ) args.clear();
+        if ( macro.variadic && args.size() == macro.named() ) args.emplace_back();
         if ( args.size() == macro.params.size() ) return args;
 
         const auto count = []( const std::size_t n )
         {
             return n == 1 ? std::string { "1 argument" } : std::format( "{} arguments", n );
         };
+        const auto takes = macro.variadic ? "at least " + count( macro.named() ) : count( macro.params.size() );
 
-        m_diags.report( support::DiagnosticId::macro_argument_count, name.symbol->text, count( macro.params.size() ), count( args.size() ) )
+        m_diags.report( support::DiagnosticId::macro_argument_count, name.symbol->text, takes, count( args.size() ) )
             .primary( name.range(), std::format( "given {} here", count( args.size() ) ) )
             .secondary( macro.name, "defined here" );
 
@@ -650,7 +905,7 @@ export namespace taihu::pp
         return tokens;
     }
 
-    std::vector< lex::Token > Preprocessor::paste( const std::vector< Item >& items, const support::SourceRange call ) const
+    std::vector< Preprocessor::Item > Preprocessor::paste( const std::vector< Item >& items, const support::SourceRange call ) const
     {
         using lex::TokenFlags;
         using Role = Item::Role;
@@ -694,11 +949,388 @@ export namespace taihu::pp
             done.push_back( rhs );
         }
 
-        std::vector< lex::Token > out;
-        out.reserve( done.size() );
-        for ( const auto& [ token, role ] : done )
-            if ( role != Role::placemarker ) out.push_back( token );
+        return done;
+    }
 
-        return out;
+    std::vector< Preprocessor::Item > Preprocessor::build( const Macro& macro, const Args& args, std::size_t begin, std::size_t end,
+                                                           support::SourceRange call, Expanded& expanded )
+    {
+        using lex::TokenFlags;
+        using lex::TokenKind;
+        using Role = Item::Role;
+
+        const auto& body   = macro.body;
+        const auto  pasted = [ & ]( const std::size_t i )
+        {
+            return ( i > begin && body[ i - 1 ].is( TokenKind::hash_hash ) ) || ( i + 1 < end && body[ i + 1 ].is( TokenKind::hash_hash ) );
+        };
+        const auto is_va_opt = [ & ]( const lex::Token& token )
+        {
+            return macro.variadic && token.is( TokenKind::identifier ) && token.symbol == m_va_opt;
+        };
+        const auto lead_with = []( std::vector< Item >& items, const std::size_t first, const lex::Token& from )
+        {
+            if ( first == items.size() ) return;
+            auto& lead = items[ first ].token;
+            lead.flags
+                = ( lead.flags & ~( TokenFlags::at_line_start | TokenFlags::leading_space ) ) | ( from.flags & TokenFlags::leading_space );
+        };
+
+        std::vector< Item > items;
+        items.reserve( end - begin );
+
+        for ( auto i = begin; i < end; ++i )
+        {
+            const auto& token = body[ i ];
+
+            if ( macro.function && token.is( TokenKind::hash ) && i + 1 < end )
+            {
+                if ( const auto idx = macro.param( body[ i + 1 ] ) )
+                {
+                    items.push_back( { stringify( args[ *idx ], token, call ) } );
+                    ++i;
+                    continue;
+                }
+
+                if ( is_va_opt( body[ i + 1 ] ) )
+                    if ( const auto close = macro.va_opt_end( i + 1 ); close && *close < end )
+                    {
+                        std::vector< lex::Token > tokens;
+                        for ( const auto& [ piece, role ] : va_opt( macro, args, i + 1, *close, call, expanded ) )
+                            if ( role != Role::placemarker ) tokens.push_back( piece );
+                        items.push_back( { stringify( tokens, token, call ) } );
+                        i = *close;
+                        continue;
+                    }
+            }
+
+            if ( is_va_opt( token ) )
+                if ( const auto close = macro.va_opt_end( i ); close && *close < end )
+                {
+                    const auto first = items.size();
+                    items.append_range( va_opt( macro, args, i, *close, call, expanded ) );
+                    lead_with( items, first, token );
+                    i = *close;
+                    continue;
+                }
+
+            if ( const auto idx = macro.param( token ) )
+            {
+                const auto raw_arg = pasted( i );
+                if ( !raw_arg && !expanded[ *idx ] ) expanded[ *idx ] = expand_arg( args[ *idx ] );
+                const auto& arg = raw_arg ? args[ *idx ] : *expanded[ *idx ];
+
+                if ( arg.empty() )
+                {
+                    if ( raw_arg ) items.push_back( { token, Role::placemarker } );
+                    continue;
+                }
+
+                const auto first = items.size();
+                for ( const auto& piece : arg ) items.push_back( { piece } );
+                lead_with( items, first, token );
+                continue;
+            }
+
+            auto copy     = token;
+            copy.location = m_sources.add_expansion( token.location, call, token.length );
+            items.push_back( { copy, token.is( TokenKind::hash_hash ) ? Role::paste : Role::token } );
+        }
+
+        return items;
+    }
+
+    std::vector< Preprocessor::Item > Preprocessor::va_opt( const Macro& macro, const Args& args, const std::size_t at,
+                                                            const std::size_t close, const support::SourceRange call, Expanded& expanded )
+    {
+        const auto va = macro.params.size() - 1;
+        if ( !expanded[ va ] ) expanded[ va ] = expand_arg( args[ va ] );
+        if ( expanded[ va ]->empty() )
+            return {
+                { macro.body[ at ], Item::Role::placemarker }
+            };
+
+        auto inner = paste( build( macro, args, at + 2, close, call, expanded ), call );
+        if ( inner.empty() )
+            return {
+                { macro.body[ at ], Item::Role::placemarker }
+            };
+        return inner;
+    }
+
+    std::optional< std::filesystem::path > Preprocessor::find_include( const std::string_view name, const bool angled,
+                                                                       const support::FileId from ) const
+    {
+        std::filesystem::path relative { name };
+        std::error_code             error;
+
+        if ( relative.is_absolute() )
+        {
+            if ( std::filesystem::is_regular_file( relative, error ) ) return relative;
+            return std::nullopt;
+        }
+
+        for ( const auto& dir : search_dirs( angled, from ) )
+            if ( const auto candidate = ( dir / relative ).lexically_normal(); std::filesystem::is_regular_file( candidate, error ) )
+                return std::filesystem::path { candidate.generic_string() };
+
+        return std::nullopt;
+    }
+
+    std::vector< std::filesystem::path > Preprocessor::search_dirs( const bool angled, const support::FileId from ) const
+    {
+        std::vector< std::filesystem::path > dirs;
+        if ( !angled )
+        {
+            auto here = std::filesystem::path { m_sources.path( from ) }.parent_path();
+            dirs.push_back( here.empty() ? std::filesystem::path { "." } : std::move( here ) );
+        }
+
+        dirs.append_range( m_include_dirs );
+        return dirs;
+    }
+
+    void Preprocessor::open_if( const lex::Token& directive, Directive kind )
+    {
+        const auto depth = m_files.size();
+        const auto value = condition( directive, kind );
+
+        m_conds.push_back( { .where = directive.range(), .name = spelling( directive ), .depth = depth, .taken = value } );
+
+        if ( !value ) skip_group();
+    }
+
+    void Preprocessor::next_branch( const lex::Token& directive, Directive kind )
+    {
+        using support::DiagnosticId;
+        if ( m_conds.empty() )
+        {
+            m_diags.report( DiagnosticId::unmatched_conditional, spelling( directive ) ).primary( directive.range(), "no `#if` is open" );
+            static_cast< void >( rest_of_ln() );
+            return;
+        }
+
+        auto& cond = m_conds.back();
+        if ( cond.seen_else )
+            m_diags.report( DiagnosticId::else_after_else, spelling( directive ) ).primary( directive.range(), "this comes after `#else`" );
+
+        if ( kind == Directive::else_ )
+        {
+            cond.seen_else = true;
+            no_extra_tokens( directive );
+        }
+        else
+            static_cast< void >( rest_of_ln() );
+
+        skip_group();
+    }
+
+    void Preprocessor::message( const lex::Token& directive, Directive kind )
+    {
+        const auto  line = rest_of_ln();
+        std::string text;
+        for ( const auto& token : line )
+        {
+            if ( !text.empty() && token.has( lex::TokenFlags::leading_space ) ) text += ' ';
+            text += cleaned( token );
+        }
+
+        const auto range = line.empty() ? directive.range() : support::SourceRange { directive.location, line.back().range().end };
+        const auto id    = kind == Directive::error ? support::DiagnosticId::error_directive : support::DiagnosticId::warning_directive;
+        m_diags.report( id, text.empty() ? std::format( "#{}", spelling( directive ) ) : text ).primary( range );
+    }
+
+    void Preprocessor::skip_group()
+    {
+        using lex::TokenFlags;
+        using lex::TokenKind;
+
+        const auto  prec = m_conds.size();
+        std::size_t depth {};
+
+        m_in_directive = false;
+        m_skipping     = true;
+        for ( ;; )
+        {
+            const auto token = lex_file();
+            if ( token.is( TokenKind::eof ) || m_conds.size() < prec )
+            {
+                m_peeked = token;
+                break;
+            }
+
+            if ( !token.is( TokenKind::hash ) || !token.has( TokenFlags::at_line_start ) ) continue;
+
+            const auto name = peek_file();
+            if ( name.has( TokenFlags::at_line_start ) ) continue;
+
+            const auto kind = directive_of( name );
+            if ( !kind ) continue;
+
+            if ( *kind == Directive::if_ || *kind == Directive::ifdef || *kind == Directive::ifndef )
+            {
+                ++depth;
+                continue;
+            }
+
+            if ( depth > 0 )
+            {
+                if ( *kind == Directive::endif ) --depth;
+                continue;
+            }
+
+            if ( *kind != Directive::endif && *kind != Directive::else_ && *kind != Directive::elif && *kind != Directive::elifdef
+                 && *kind != Directive::elifndef )
+                continue;
+
+            lex_file();
+            m_skipping     = false;
+            m_in_directive = true;
+
+            if ( *kind == Directive::endif )
+            {
+                endif( name );
+                return;
+            }
+
+            auto& cond = m_conds.back();
+            if ( cond.seen_else )
+                m_diags.report( support::DiagnosticId::else_after_else, spelling( name ) )
+                    .primary( name.range(), "this comes after `#else`" );
+
+            if ( *kind == Directive::else_ )
+            {
+                cond.seen_else = true;
+                no_extra_tokens( name );
+                if ( !cond.taken )
+                {
+                    cond.taken = true;
+                    return;
+                }
+            }
+            else if ( cond.taken )
+                static_cast< void >( rest_of_ln() );
+            else if ( condition( name, *kind ) )
+            {
+                cond.taken = true;
+                return;
+            }
+
+            m_in_directive = false;
+            m_skipping     = true;
+        }
+
+        m_skipping = false;
+    }
+
+    void Preprocessor::close_conds( const std::size_t depth )
+    {
+        while ( !m_conds.empty() && m_conds.back().depth > depth )
+        {
+            const auto& cond = m_conds.back();
+
+            m_diags.report( support::DiagnosticId::unterminated_conditional, cond.name ).primary( cond.where, "never closed by `#endif`" );
+            m_conds.pop_back();
+        }
+    }
+
+    void Preprocessor::no_extra_tokens( const lex::Token& directive )
+    {
+        if ( const auto ext = rest_of_ln(); !ext.empty() )
+            m_diags.report( support::DiagnosticId::extra_tokens_after_directive, spelling( directive ) )
+                .primary( { ext.front().location, ext.back().range().end }, "not expected here" );
+    }
+
+    bool Preprocessor::condition( const lex::Token& directive, Directive kind )
+    {
+        using support::DiagnosticId;
+
+        if ( kind == Directive::if_ || kind == Directive::elif ) return evaluate( directive );
+
+        const auto name = peek_file();
+        if ( name.is( lex::TokenKind::eof ) || name.has( lex::TokenFlags::at_line_start ) )
+        {
+            m_diags.report( DiagnosticId::missing_macro_name, spelling( directive ) )
+                .primary( directive.range(), "expected a name after this" );
+            return false;
+        }
+        lex_file();
+
+        if ( !name.is( lex::TokenKind::identifier ) )
+        {
+            m_diags.report( DiagnosticId::macro_name_not_identifier ).primary( name.range(), "not an identifier" );
+            static_cast< void >( rest_of_ln() );
+            return false;
+        }
+
+        no_extra_tokens( directive );
+
+        const bool defined = m_macros.contains( name.symbol );
+        return kind == Directive::ifdef || kind == Directive::elifdef ? defined : !defined;
+    }
+
+    bool Preprocessor::evaluate( const lex::Token& directive )
+    {
+        using lex::TokenKind;
+
+        const auto line = rest_of_ln();
+        if ( line.empty() )
+        {
+            m_diags.report( support::DiagnosticId::bad_if_expression, spelling( directive ) )
+                .primary( directive.range(), "expected an expression after this" );
+            return false;
+        }
+
+        std::vector< lex::Token > replaced;
+        for ( std::size_t i {}; i < line.size(); ++i )
+        {
+            const auto& token = line[ i ];
+            if ( !token.is( TokenKind::identifier ) || token.symbol != m_defined )
+            {
+                replaced.push_back( token );
+                continue;
+            }
+
+            const bool paren = i + 1 < line.size() && line[ i + 1 ].is( TokenKind::l_paren );
+            const auto at    = i + ( paren ? 2 : 1 );
+            const auto last  = paren ? at + 1 : at;
+            if ( at >= line.size() || !line[ at ].is( TokenKind::identifier )
+                 || ( paren && ( last >= line.size() || !line[ last ].is( TokenKind::r_paren ) ) ) )
+            {
+                m_diags.report( support::DiagnosticId::defined_needs_name ).primary( token.range(), "expected a macro name after this" );
+                return false;
+            }
+
+            auto value
+                = scratch( m_macros.contains( line[ at ].symbol ) ? "1" : "0", { token.location, line[ last ].range().end } ).front();
+            value.flags = token.flags;
+            replaced.push_back( value );
+            i = last;
+        }
+
+        const auto tokens = expand_arg( replaced );
+        IfExpr     expression {
+            tokens,
+                { line.front().location, line.back().range().end },
+            spelling( directive ),
+            m_diags,
+            [ this ]( const lex::Token& token )
+            {
+                return cleaned( token );
+                  }
+        };
+
+        const auto value = expression.evaluate();
+        return value && value->bits != 0;
+    }
+
+    std::optional< Preprocessor::Directive > Preprocessor::directive_of( const lex::Token& token ) const
+    {
+        if ( !token.is( lex::TokenKind::identifier ) ) return std::nullopt;
+
+        const auto iter = m_directives.find( token.symbol );
+        if ( iter == m_directives.end() ) return std::nullopt;
+
+        return iter->second;
     }
 } // namespace taihu::pp

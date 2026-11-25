@@ -1,6 +1,24 @@
-#define str(x) #x
-#define cat(a, b) a ## b
+#include "config.h"
+#include "config.h"
 
-const char* s = str(hello   world);
-int cat(my, var) = 1;
-int e = cat(+, /);
+#if 0
+#error never seen
+#endif
+
+#if VERSION >= 2 && defined(ZUPAFAST)
+int mode = ZUPAFAST;
+#elif VERSION >= 2
+int mode = 2;
+#else
+int mode = 1;
+#endif
+
+const char* where = __FILE__;
+int line = __LINE__;
+
+#ifdef DEBUG
+#warning dbg
+#endif
+
+#if VERSION > 1 +
+#endif

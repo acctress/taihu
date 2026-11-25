@@ -15,6 +15,7 @@ namespace
         bool                       preprocess_only {};
         bool                       no_line_markers {};
         std::vector< std::string > defines;
+        std::vector< std::string > include_dirs;
         std::vector< std::string > inputs;
     };
 
@@ -51,10 +52,16 @@ namespace
                      const std::optional< FileId > defines, const Options& options )
     {
         taihu::pp::Preprocessor preprocessor { sources, diags, interner, file };
+
+        for ( const auto& dir : options.include_dirs ) preprocessor.add_include_dir( dir );
         if ( defines ) preprocessor.push_file( *defines );
 
-        taihu::pp::Printer printer { sources, preprocessor,
-                                     { .line_markers = !options.no_line_markers, .color = color_enabled( stdout ) } };
+        taihu::pp::Printer printer {
+            sources,
+            preprocessor,
+            { .line_markers = !options.no_line_markers, .color = color_enabled( stdout ) }
+        };
+
         for ( auto token = preprocessor.next(); !token.is( taihu::lex::TokenKind::eof ); token = preprocessor.next() )
         {
             if ( options.dump_tokens ) dump_token( sources, preprocessor, token );
@@ -76,6 +83,7 @@ std::int32_t main( const int argc, const char* const * argv )
         .flag( "-E", options.preprocess_only, "print each file after preprocessing and stop" )
         .flag( "-P", options.no_line_markers, "leave line markers out of the -E output" )
         .values( "-D", options.defines, "name[=value]", "define a macro" )
+        .values("-I", options.include_dirs, "dir", "search this folder for header files")
         .positionals( options.inputs, "files", "C source files" );
 
     SourceManager            sources;
